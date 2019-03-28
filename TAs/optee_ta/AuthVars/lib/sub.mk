@@ -4,7 +4,7 @@ create_lib_symlinks:
 .PHONY: clean_lib_symlinks
 clean_lib_symlinks:
 
-ifeq ($(CFG_FTPM_USE_WOLF),y)
+ifeq ($(CFG_AUTHVARS_USE_WOLF),y)
 subdirs-y += wolf
 create_lib_symlinks: ./lib/wolf/wolf_symlink
 clean_lib_symlinks: remove_wolf_symlink
