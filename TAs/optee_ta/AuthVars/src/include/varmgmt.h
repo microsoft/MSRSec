@@ -131,6 +131,9 @@ QueryByAttribute(
 );
 
 #ifdef AUTHVAR_DEBUG
+CHAR*
+CovnertWCharToChar( WCHAR *Unicode, CHAR *Ascii, UINT32 AsciiBufferLength);
+
 VOID
 AuthVarDumpVarListImpl(
     VOID

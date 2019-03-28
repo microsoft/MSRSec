@@ -54,6 +54,7 @@ BOOL AuthVarIsRuntime = false;
 // 
 TEE_Result TA_CreateEntryPoint(void)
 {
+    TEE_Result status;
     // If we've been here before, don't init again.
     if (AuthVarInitialized)
     {
@@ -62,8 +63,10 @@ TEE_Result TA_CreateEntryPoint(void)
     }
 
     // If we fail to open storage we cannot continue.
-    if (!AuthVarInitStorage())
+    status = AuthVarInitStorage();
+    if (status != TEE_SUCCESS)
     {
+        EMSG("AuthVars failed to initialize with error 0x%x", status);
         TEE_Panic(TEE_ERROR_BAD_STATE);
     }
 
