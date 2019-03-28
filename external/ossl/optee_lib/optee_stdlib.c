@@ -11,7 +11,7 @@ void sassl_free(void *ptr) {
     TEE_Free(ptr);
 }
 
-int sassl_getentropy(void *buffer, size_t length) {
+int getentropy(void *buffer, size_t length) {
     TEE_GenerateRandom(buffer, (uint32_t)length);
     return 0;
 }
