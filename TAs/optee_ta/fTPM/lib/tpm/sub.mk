@@ -27,10 +27,10 @@ remove_tpm_symlink:
 	unlink ./lib/tpm/tpm_symlink || true
 
 .PHONY: download_tpm
-download_wolf: $(TPM_ROOT)/README.md
+download_tpm: $(TPM_ROOT)/README.md
 
 $(TPM_ROOT)/README.md:
-	( cd ../../../external/; git submodule update --init ms-tpm-20-ref)
+	( cd $(SUBMODULE_ROOT); git submodule update --init ms-tpm-20-ref)
 
 TPM_INCLUDES = \
  tpm_symlink/tpm/include \

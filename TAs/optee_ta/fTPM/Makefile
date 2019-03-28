@@ -1,8 +1,10 @@
 BINARY=bc50d971-d4c9-42c4-82cb-343fb7f37896
 
 O ?= ../out/fTPM
-WOLF_ROOT := ./../../external/ms-tpm-20-ref/external/wolfssl/
-TPM_ROOT := ./../../external/ms-tpm-20-ref/TPMCmd
+SUBMODULE_ROOT := ../../../external
+WOLF_ROOT := $(SUBMODULE_ROOT)/wolfssl
+OSSL_ROOT := $(SUBMODULE_ROOT)/ossl
+TPM_ROOT := $(SUBMODULE_ROOT)/ms-tpm-20-ref/TPMCmd
 
 include $(TA_DEV_KIT_DIR)/mk/ta_dev_kit.mk
 
