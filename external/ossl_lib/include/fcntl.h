@@ -1,7 +1,7 @@
 #ifndef _FCNTL_H
 #define _FCNTL_H
 
-#include "__common.h"
+#include "sassl_common.h"
 #include <stdarg.h>
 
 #define O_CREAT        0100

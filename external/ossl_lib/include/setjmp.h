@@ -1,7 +1,7 @@
 #ifndef _SETJMP_H
 #define _SETJMP_H
 
-#include "__common.h"
+#include "sassl_common.h"
 
 static inline void siglongjmp(sigjmp_buf env, int val)
 {

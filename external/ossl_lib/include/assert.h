@@ -1,7 +1,7 @@
 #ifndef _ASSERT_H
 #define _ASSERT_H
 
-#include "__common.h"
+#include "sassl_common.h"
 
 void sassl_assert_fail(
     const char* expr,

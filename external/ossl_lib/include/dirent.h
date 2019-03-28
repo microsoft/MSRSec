@@ -1,7 +1,7 @@
 #ifndef _DIRENT_H
 #define _DIRENT_H
 
-#include "__common.h"
+#include "sassl_common.h"
 
 typedef struct __DIR DIR;
 

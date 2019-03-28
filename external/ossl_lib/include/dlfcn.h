@@ -1,7 +1,7 @@
 #ifndef _DLFCN_H
 #define _DLFCN_H
 
-#include "__common.h"
+#include "sassl_common.h"
 
 #define RTLD_LAZY   1
 #define RTLD_NOW    2

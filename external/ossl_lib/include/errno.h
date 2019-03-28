@@ -1,7 +1,7 @@
 #ifndef _ERRNO_H
 #define _ERRNO_H
 
-#include "__common.h"
+#include "sassl_common.h"
 
 extern int* sassl_errno_location(void);
 

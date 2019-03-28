@@ -1,7 +1,7 @@
 #ifndef _STDLIB_H
 #define _STDLIB_H
 
-#include "__common.h"
+#include "sassl_common.h"
 #include "stdarg.h"
 #include "sassl/entropy_override.h"
 #include "sassl/sassl_debug.h"

@@ -1,7 +1,7 @@
 #ifndef _SYS_TIME_H
 #define _SYS_TIME_H
 
-#include "../__common.h"
+#include "../sassl_common.h"
 
 struct timezone 
 {

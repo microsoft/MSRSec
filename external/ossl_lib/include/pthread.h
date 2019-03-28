@@ -4,7 +4,7 @@
 #ifndef _PTHREAD_H
 #define _PTHREAD_H
 
-#include "__common.h"
+#include "sassl_common.h"
 #include "time.h"
 
 #define PTHREAD_MUTEX_INITIALIZER {{0}}

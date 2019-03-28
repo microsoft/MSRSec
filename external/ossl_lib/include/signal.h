@@ -2,7 +2,7 @@
 #define _SIGNAL_H
 
 #define NEED_sigset_t
-#include "__common.h"
+#include "sassl_common.h"
 
 #define SIGHUP    1
 #define SIGINT    2

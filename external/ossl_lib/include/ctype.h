@@ -1,7 +1,7 @@
 #ifndef _CTYPE_H
 #define _CTYPE_H
 
-#include "__common.h"
+#include "sassl_common.h"
 
 static inline int toupper(int c)
 {

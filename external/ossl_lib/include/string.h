@@ -1,7 +1,7 @@
 #ifndef _STRING_H
 #define _STRING_H
 
-#include "__common.h"
+#include "sassl_common.h"
 
 static inline size_t strlen(const char *s)
 {
