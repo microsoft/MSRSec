@@ -34,6 +34,7 @@
 #pragma once
 #include <tee_internal_api.h>
 #include <tee_internal_api_extensions.h>
+#include <utee_defines.h>
 #include "ntdefs.h"
 #include "uefidefs.h"
 

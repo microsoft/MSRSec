@@ -164,17 +164,25 @@ AuthVarInitStorage(
     PUEFI_VARIABLE  pVar;
     PWCHAR          name;
     PCGUID          guid;
-    VARTYPE         varType;
     ATTRIBUTES      attrib;
     UINT32          size;
     UINT32          objIDLen;
-    USHORT          i = 0;
+    VARTYPE         varType;
     TEE_Result      status;
+    USHORT          i;
+
+    // Initialize variable lists
+    for(varType = 0; varType < VTYPE_END; varType++ )
+    {
+        DMSG("Initializing list %d", varType);
+        InitializeListHead(&VarInfo[varType].Head);
+    }
 
     // Allocate object enumerator
     status = TEE_AllocatePersistentObjectEnumerator(&AuthVarEnumerator);
     if (status != TEE_SUCCESS)
     {
+        DMSG("Failed to create enumerator: 0x%x", status);
         goto Cleanup;
     }
 
@@ -182,8 +190,18 @@ AuthVarInitStorage(
     status = TEE_StartPersistentObjectEnumerator(AuthVarEnumerator, TEE_STORAGE_PRIVATE);
     if (status != TEE_SUCCESS)
     {
+        DMSG("Failed to start enumerator: 0x%x", status);
+        // On first run there will be no objects in storage, this is expected.
+        if (status == TEE_ERROR_ITEM_NOT_FOUND)
+        {
+            DMSG("No stored variables found");
+            status = TEE_SUCCESS;
+        }
         goto Cleanup;
     }
+
+    // Init index
+    i = 0;
 
     // Iterate over persistent objects
     status = TEE_GetNextPersistentObject(AuthVarEnumerator,
@@ -203,17 +221,16 @@ AuthVarInitStorage(
 
         // Open object
         status = TEE_OpenPersistentObject(TEE_STORAGE_PRIVATE,
-            &(VarList[i].ObjectID),
-            sizeof(VarList[i].ObjectID),
-            TA_STORAGE_FLAGS,
-            &(VarList[i].ObjectHandle));
+                                          &(VarList[i].ObjectID),
+                                          sizeof(VarList[i].ObjectID),
+                                          TA_STORAGE_FLAGS,
+                                          &(VarList[i].ObjectHandle));
 
         // Read object
         status = TEE_ReadObjectData(TEE_STORAGE_PRIVATE,
-            (PVOID)&pVar,
-            objInfo.dataSize,
-            &size);
-
+                                    (PVOID)&pVar,
+                                    objInfo.dataSize,
+                                    &size);
         // Sanity check size
         if (objInfo.dataSize != size)
         {
@@ -237,9 +254,9 @@ AuthVarInitStorage(
 
         // Attempt to get another object
         status = TEE_GetNextPersistentObject(AuthVarEnumerator,
-            &objInfo,
-            &(VarList[i].ObjectID),
-            &objIDLen);
+                                             &objInfo,
+                                             &(VarList[i].ObjectID),
+                                             &objIDLen);
     }
 
     // Validate status from TEE_GetNextPersistentObject
@@ -1181,9 +1198,12 @@ NvCreateVariable(
     PUEFI_VARIABLE  Var     // IN
 )
 {
-    UINT32      dataSize;
-    TEE_Result  status;
-    USHORT      i;
+    BYTE hash[TEE_SHA256_HASH_SIZE];
+    PVOID namePtr;
+    TEE_OperationHandle opHandle;
+    UINT32 length, dataSize;
+    TEE_Result status;
+    USHORT i;
 
     // Parameter validation
     if (!Var)
@@ -1194,33 +1214,70 @@ NvCreateVariable(
 
     // Use next free and sanity check
     i = NextFreeIdx;
-    if (i >= MAX_AUTHVAR_ENTRIES)
+    if (i >= (MAX_AUTHVAR_ENTRIES))
     {
         status = TEE_ERROR_OUT_OF_MEMORY;
         goto Cleanup;
     }
 
     // Calculate total size needed to store this variable
-    dataSize = sizeof(UEFI_VARIABLE) + Var->NameSize +
-        Var->ExtAttribSize + Var->DataSize;
+    dataSize = sizeof(UEFI_VARIABLE) + Var->NameSize + Var->ExtAttribSize + Var->DataSize;
 
-    // Create object for this var
-    status = TEE_CreatePersistentObject(TEE_STORAGE_PRIVATE,
-        (PVOID)&(VarList[i].ObjectID),
-        sizeof(VarList[i].ObjectID),
-        TA_STORAGE_FLAGS, NULL,
-        (PVOID)Var, dataSize,
-        &(VarList[i].ObjectHandle));
+    // Init for hash operation
+    opHandle = TEE_HANDLE_NULL;
+    length = TEE_SHA256_HASH_SIZE;
+
+    // Generate a unique ObjectID for this object based on GUID + name.
+    // REVISIT: In the unlikely event of a collision, fail the create operation.
+    status = TEE_AllocateOperation(&opHandle, TEE_ALG_SHA256, TEE_MODE_DIGEST, 0);
     if (status != TEE_SUCCESS)
     {
+        DMSG("Failed to allocate digest operation");
+        goto Cleanup;
+    }
+
+    // Include VendorGuid first
+    TEE_DigestUpdate(opHandle, &(Var->VendorGuid), sizeof(Var->VendorGuid));
+
+    // Then name, finalizing hash
+    namePtr = (PVOID)(Var->BaseAddress + Var->NameOffset);
+    status = TEE_DigestDoFinal(opHandle, namePtr, Var->NameSize, (PVOID)hash, &length);
+    if (status != TEE_SUCCESS)
+    {
+        DMSG("Failed to finalize digest operation");
+        goto Cleanup;
+    }
+
+    // Assumes TEE_OBJECT_ID_MAX_LEN == 64!
+    VarList[i].ObjectID = *(PUINT64)hash;
+    
+    // Attempt to create an object for this var
+    status = TEE_CreatePersistentObject(TEE_STORAGE_PRIVATE,
+                                        (PVOID)&(VarList[i].ObjectID),
+                                        sizeof(VarList[i].ObjectID),
+                                        TA_STORAGE_FLAGS, NULL,
+                                        (PVOID)Var, dataSize,
+                                        &(VarList[i].ObjectHandle));
+    // Successful creation?
+    if (status != TEE_SUCCESS)
+    {
+        // REVISIT: This really shouldn't be a panic long-term.
+        if (status == TEE_ERROR_ACCESS_CONFLICT)
+        {
+            EMSG("Collision on ObjectID, duplicate (GUID, Name)?");
+            TEE_Panic(TEE_ERROR_ACCESS_CONFLICT);
+        }
+
+        // Other unexpected error
+        EMSG("Failed to create persistent object with error 0x%x", status);
         goto Cleanup;
     }
 
     // Write out this variable
-    status = TEE_WriteObjectData(VarList[i].ObjectHandle,
-        (PVOID)Var, dataSize);
+    status = TEE_WriteObjectData(VarList[i].ObjectHandle, (PVOID)Var, dataSize);
     if (status != TEE_SUCCESS)
     {
+        EMSG("Failed to write object");
         goto Cleanup;
     }
 
@@ -1233,7 +1290,12 @@ NvCreateVariable(
 
     // Success, return
     status = TEE_SUCCESS;
+
 Cleanup:
+    if(IS_VALID(opHandle))
+    {
+        TEE_FreeOperation(opHandle);
+    }
     return status;
 }
 
@@ -1244,8 +1306,8 @@ NvUpdateVariable(
 )
 {
     UINT32      newSize;
-    USHORT      i;
     TEE_Result  status;
+    USHORT      i;
 
     // Validate parameters
     if (!Var)
@@ -1294,7 +1356,7 @@ NvDeleteVariable(
 )
 {
     TEE_Result  status;
-    USHORT      index, i;
+    USHORT      i;
 
     // Validate parameters
     if (!Var)
@@ -1304,7 +1366,7 @@ NvDeleteVariable(
     }
 
     // Pickup index into VarList
-    index = Var->MetaIndex;
+    i = Var->MetaIndex;
 
     // Sanity check metadata
     if (Var != VarList[i].Var)
@@ -1323,7 +1385,7 @@ NvDeleteVariable(
     TEE_Free(VarList[i].Var);
 
     // If necessary, update next free
-    if (index < NextFreeIdx)
+    if (i < NextFreeIdx)
     {
         NextFreeIdx = i;
     }
@@ -1510,6 +1572,7 @@ Cleanup:
     return retVal;
 }
 
+// Debug
 #ifdef AUTHVAR_DEBUG
 PCHAR
 ConvertWCharToChar(
@@ -1543,10 +1606,33 @@ AuthVarDumpVarList(
     UINT32 varSize, i;
     PUEFI_VARIABLE pVar;
     PCCH varType;
+    PLIST_ENTRY head, cur;
+    const UINT32 maxNameLength = 50;
+    CHAR convertedNameBuf[maxNameLength];
 
     FMSG("================================");
-    FMSG("");
-    FMSG("#Num:                              |Offset( Address ) | Alloc( Data Size) | State ");
+    FMSG("\tVolatile:");
+    FMSG("                              | Address | Alloc( Data Size ) | State ");
+    
+    head = &VarInfo[VTYPE_VOLATILE].Head;
+    cur = head->Flink;
+
+    // Run the list for this type
+    while ((cur) && (cur != head)) {
+        pVar = (PUEFI_VARIABLE)cur;
+        varName = pVar->NameOffset;
+        varName = ConvertWCharToChar((WCHAR *)varName, convertedNameBuf, maxNameLength);
+        varSize = sizeof(UEFI_VARIABLE) + pVar->NameSize + pVar->ExtAttribSize + pVar->DataSize;
+        varType = "    ";
+
+        FMSG("%-30s|%#9lx| A:%#6x(D:%#6x) | %s |",
+            varName, (UINT_PTR)pVar, varSize, pVar->DataSize, varType);
+
+        cur = cur->Flink;
+    }
+
+    FMSG("================================");
+    FMSG("\tNon Volatile:");
 
     for (i = 0; i < MAX_AUTHVAR_ENTRIES; i++)
     {
@@ -1557,6 +1643,7 @@ AuthVarDumpVarList(
 
         pVar = VarList[i].Var;
         varName = (UINT_PTR)pVar + pVar->NameOffset;
+        varName = ConvertWCharToChar((WCHAR *)varName, convertedNameBuf, maxNameLength);
         varSize = sizeof(UEFI_VARIABLE) + pVar->NameSize + pVar->ExtAttribSize + pVar->DataSize;
 
         if (pVar->Attributes.AuthWrite || pVar->Attributes.TimeBasedAuth) {
@@ -1566,8 +1653,8 @@ AuthVarDumpVarList(
             varType = "    ";
         }
 
-        FMSG("#%3d:%-30s|%#7lx| A:%#6x(D:%#6x) | %s |",
-            i, varName, (UINT_PTR)pVar, varSize, pVar->DataSize, varType);
+        FMSG("%-30s|%#9lx| A:%#6x(D:%#6x) | %s |",
+            varName, (UINT_PTR)pVar, varSize, pVar->DataSize, varType);
     }
 
     FMSG("================================");

@@ -1,6 +1,4 @@
-/* Microsoft Reference Implementation for TPM 2.0
- *
- *  The copyright in this software is being made available under the BSD License,
+/*  The copyright in this software is being made available under the BSD License,
  *  included below. This software may be subject to other third party and
  *  contributor rights, including patent rights, and no such rights are granted
  *  under this license.
@@ -38,64 +36,51 @@
 #include <string.h>
 #include <stdlib.h>
 
+// Types
+typedef uint64_t clock_t;
 #if defined HAVE_TIME_T_TYPE
 typedef long time_t;
 #endif
 
-/* Remove the automatic setting of the default I/O functions EmbedSend()
-    and EmbedReceive(). */
+// Remove setting of the default I/O functions EmbedSend() and EmbedReceive()
 #define WOLFSSL_USER_IO
 
-/* Avoid naming conflicts */
+// Avoid naming conflicts
 #define NO_OLD_WC_NAMES
 
-/* Use stack based fast math for all big integer math */
+// Use stack based fast math for all big integer math
 #define USE_FAST_MATH
 #define TFM_TIMING_RESISTANT
 
-/* Expose direct encryption functions */
+// Expose direct encryption functions
 #define WOLFSSL_AES_DIRECT
 
-/* Enable/Disable algorithm support based on TPM implementation header */
-    #define WOLFSSL_SHA256
-    #define HAVE_ECC
-
-    /* Expose additional ECC primitives */
-    #define WOLFSSL_PUBLIC_ECC_ADD_DBL 
-    #define ECC_TIMING_RESISTANT
-
-    /* Enables Shamir calc method */
-    #define ECC_SHAMIR
-
-    /* The TPM only needs low level ECC crypto */
-    #define NO_ECC_SIGN
-    #define NO_ECC_VERIFY
-    #define NO_ECC_SECP
-
+// Misc
+#define WOLFSSL_SHA256
+#define HAVE_ECC
 #define NO_RC4
 #define XMALLOC_OVERRIDE
 #define TFM_TIMING_RESISTANT
 #define ECC_TIMING_RESISTANT
 #define WC_RSA_BLINDING
-#define HAVE_ECC_VERIFY
 #define WOLFSSL_
 
-/* Bypass P-RNG and use only HW RNG */
+// Bypass P-RNG and use only HW RNG
 extern int wolfRand(unsigned char* output, unsigned int sz);
 #undef  CUSTOM_RAND_GENERATE_BLOCK
 #define CUSTOM_RAND_GENERATE_BLOCK  wolfRand
 
-//#ifdef XMALLOC_OVERRIDE
+// {re|m}alloc/free
 extern void *wolfMalloc(size_t n);
 extern void *wolfRealloc(void *p, size_t n);
 #define XMALLOC(sz, heap, type)     wolfMalloc(sz)
 #define XREALLOC(p, sz, heap, type) wolfRealloc(p, sz)
 #define XFREE(p, heap, type)        TEE_Free(p)
 
-typedef uint64_t clock_t;
+// Fill in some blanks (as necessary)
 
 #ifndef XMEMCPY
-#define XMEMCPY(pdest, psrc, size) memcpy((pdest), (psrc), (size))
+#define XMEMCPY(pdest, psrc, size)  memcpy((pdest), (psrc), (size))
 #endif
 
 #ifndef XMEMMOVE
@@ -107,16 +92,16 @@ typedef uint64_t clock_t;
 #endif
 
 #ifndef XSTRLEN
-#define XSTRLEN(str) strlen((str))
+#define XSTRLEN(str)    strlen((str))
 #endif
 
 #ifndef XSTRNCPY
-#define XSTRNCPY(str1,str2,n) strncpy((str1),(str2),(n))
+#define XSTRNCPY(str1,str2,n)   strncpy((str1),(str2),(n))
 #endif
 
 #ifndef XSTRNCAT
 char *strncat(char *dst, const char *src, size_t siz);
-#define XSTRNCAT(dest, src, n) strncat(dest, src, n)
+#define XSTRNCAT(dest, src, n)  strncat(dest, src, n)
 #endif
 
 #ifndef XSNPRINTF
@@ -125,26 +110,25 @@ char *strncat(char *dst, const char *src, size_t siz);
 
 #ifndef XSTRNCASECMP
 int strncasecmp(const char *str1, const char *str2, size_t n);
-#define XSTRNCASECMP(str1,str2,n) strncasecmp((str1),(str2),(n))
+#define XSTRNCASECMP(str1,str2,n)   strncasecmp((str1),(str2),(n))
 #endif
 
 #ifndef XSTRNCMP
-#define XSTRNCMP(str1,str2,n) strncmp((str1),(str2),(n))
+#define XSTRNCMP(str1,str2,n)   strncmp((str1),(str2),(n))
 #endif
 
 #ifndef XMEMCMP
-#define XMEMCMP(str1,str2,n) memcmp((str1),(str2),(n))
+#define XMEMCMP(str1,str2,n)    memcmp((str1),(str2),(n))
 #endif
 
 #ifndef XTOUPPER
 int toupper(int c);
-#define XTOUPPER(str1) toupper((str1))
+#define XTOUPPER(str1)  toupper((str1))
 #endif
 
 #ifndef XTOLOWER
 int tolower(int c);
-#define XTOLOWER(str1) tolower((str1))
+#define XTOLOWER(str1)  tolower((str1))
 #endif
-
 
 #endif // WOLF_CRYPT_USER_SETTINGS_H

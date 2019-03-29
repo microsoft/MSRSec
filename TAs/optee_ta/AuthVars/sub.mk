@@ -5,15 +5,21 @@ CFG_TEE_TA_LOG_LEVEL ?= 1
 
 AUTHVAR_FLAGS = -DGCC
 
-CFG_AUTHVARS_USE_WOLF ?= n
+CFG_AUTHVARS_USE_WOLF ?= y
 
 ifeq ($(CFG_AUTHVARS_USE_WOLF),y)
+#
+# WOLF
+#
 CPPFLAGS += -DUSE_WOLFCRYPT
-WOLF_SSL_FLAGS = -DSINGLE_THREADED -DNO_FILESYSTEM -DNO_WOLFSSL_CLIENT -DNO_WOLFSSL_SERVER -DOPENSSL_EXTRA -DWOLFSSL_USER_SETTINGS -DTIME_OVERRIDES -DSTRING_USER -DCTYPE_USER -DHAVE_PKCS7 -DHAVE_AES_KEYWRAP -DHAVE_X963_KDF -DNO_WRITEV -DNO_ASN_TIME -DHAVE_TIME_T_TYPE -DWOLFCRYPT_ONLY
-WOLF_WARNING_SUPPRESS = -Wno-unused-function -Wno-switch-default
-
-WOLF_INCLUDES = -include ./src/include/user_settings.h
-INCLUDE_OVERWRITES = $(WOLF_INCLUDES)
+SSL_FLAGS = -DSINGLE_THREADED -DNO_FILESYSTEM -DNO_WOLFSSL_CLIENT -DNO_WOLFSSL_SERVER -DOPENSSL_EXTRA -DWOLFSSL_USER_SETTINGS -DTIME_OVERRIDES -DSTRING_USER -DCTYPE_USER -DHAVE_PKCS7 -DHAVE_AES_KEYWRAP -DHAVE_X963_KDF -DNO_WRITEV -DNO_ASN_TIME -DHAVE_TIME_T_TYPE -DWOLFCRYPT_ONLY
+SSL_WARNING_SUPPRESS = -Wno-unused-function -Wno-switch-default
+SSL_INCLUDES = -include ./src/wolf/user_settings.h
+INCLUDE_OVERWRITES = $(SSL_INCLUDES)
+else
+#
+# OPENSSL
+#
 endif
 
 CPPFLAGS += -DTHIRTY_TWO_BIT -DCFG_TEE_TA_LOG_LEVEL=$(CFG_TEE_TA_LOG_LEVEL) -D_ARM_ -w -Wno-strict-prototypes -mcpu=$(TA_CPU) -fstack-protector -Wstack-protector
@@ -44,15 +50,30 @@ endif
 all: create_lib_symlinks
 clean: clean_lib_symlinks
 
+cflags-y += $(AUTHVAR_FLAGS) $(SSL_FLAGS) $(INCLUDE_OVERWRITES)
+
 subdirs-y += lib
 
 global-incdirs-y += src/include
 
-cflags-y += $(AUTHVAR_FLAGS) $(WOLF_SSL_FLAGS) $(INCLUDE_OVERWRITES)
 
 srcs-y += src/varops.c
 srcs-y += src/varauth.c
 srcs-y += src/varmgmt.c
-srcs-y += src/RuntimeSupport.c
+
+ifeq ($(CFG_AUTHVARS_USE_WOLF),y)
+#
+# Using WolfSSL
+#
+global-incdirs-y += src/wolf
+srcs-y += src/wolf/RuntimeSupport.c
+srcs-y += src/wolf/VarAuthWolf.c
+else
+#
+# Using OpenSSL
+#
+global-incdirs-y += src/ossl
+srcs-y += src/ossl/VarAuthOSSL.c
+endif
 
 srcs-y += AuthVars.c

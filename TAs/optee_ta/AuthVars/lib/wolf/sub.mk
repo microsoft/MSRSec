@@ -46,4 +46,4 @@ wolf_crypt_files = \
  wolf_symlink/wolfcrypt/src/wolfmath.c \
 
 srcs-y = $(foreach wcfile, $(wolf_crypt_files), $(wcfile) )
-$(foreach wcfile, $(wolf_crypt_files), $(eval  cflags-$(wcfile)-y += $(WOLF_SSL_FLAGS) $(INCLUDE_OVERWRITES) $(WOLF_WARNING_SUPPRESS)))
+$(foreach wcfile, $(wolf_crypt_files), $(eval  cflags-$(wcfile)-y += $(SSL_FLAGS) $(INCLUDE_OVERWRITES) $(SSL_WARNING_SUPPRESS)))
