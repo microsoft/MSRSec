@@ -1,7 +1,9 @@
 BINARY=2d57c0f7-bddf-48ea-832f-d84a1a219301
 
 O ?= ../out/AuthVars
-WOLF_ROOT := ../../../../external/wolfssl/
+SUBMODULE_ROOT := ../../../external
+WOLF_ROOT := $(SUBMODULE_ROOT)/wolfssl
+OSSL_ROOT := $(SUBMODULE_ROOT)/ossl
 
 include $(TA_DEV_KIT_DIR)/mk/ta_dev_kit.mk
 

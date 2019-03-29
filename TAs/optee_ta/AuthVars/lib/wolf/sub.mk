@@ -2,7 +2,7 @@
 # For the purposes of this command the current working directory is the makefile root (/fTPM) folder,
 # but the symlink will be created relative to THIS directory so the source requires an extra '../../'.
 #
-./lib/wolf/wolf_symlink:
+./lib/wolf/wolf_symlink: remove_wolf_symlink download_wolf
 	@echo Checking symlink to the WolfSSL folder: $(abspath $(WOLF_ROOT))
 	@if [ -L ./lib/wolf/wolf_symlink ] ; \
 	then \
@@ -14,11 +14,14 @@
 
 .PHONY: remove_wolf_symlink
 remove_wolf_symlink:
-	@if [ -e ./lib/wolf/wolf_symlink ] ; \
-	then \
-	unlink ./lib/wolf/wolf_symlink ; \
-	echo Clearing symlink to the Wolf folder: $(abspath $(WOLF_ROOT)) ; \
-	fi
+	@echo Clearing symlink to the Wolf folder: $(abspath $(WOLF_ROOT))
+	unlink ./lib/wolf/wolf_symlink || true
+
+.PHONY: download_wolf
+download_wolf: $(WOLF_ROOT)/README
+
+$(WOLF_ROOT)/README:
+	( cd ../../../external/; git submodule update --init wolfssl)
 
 global-incdirs-y += wolf_symlink
 

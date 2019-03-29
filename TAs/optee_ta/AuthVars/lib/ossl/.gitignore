@@ -1,0 +1,4 @@
+include/**
+libcrypto.a
+optee_stdlib.c
+optee_stdlib.h

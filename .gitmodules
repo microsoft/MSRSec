@@ -1,0 +1,9 @@
+[submodule "external/ms-tpm-20-ref"]
+	path = external/ms-tpm-20-ref
+	url = https://github.com/Microsoft/ms-tpm-20-ref.git
+[submodule "external/wolfssl"]
+	path = external/wolfssl
+	url = https://github.com/wolfSSL/wolfssl.git
+[submodule "external/ossl_lib/openssl"]
+	path = external/ossl/openssl
+	url = https://github.com/openssl/openssl.git
