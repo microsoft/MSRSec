@@ -227,8 +227,8 @@ AuthVarInitStorage(
                                           &(VarList[i].ObjectHandle));
 
         // Read object
-        status = TEE_ReadObjectData(TEE_STORAGE_PRIVATE,
-                                    (PVOID)&pVar,
+        status = TEE_ReadObjectData(VarList[i].ObjectHandle,
+                                    (PVOID)pVar,
                                     objInfo.dataSize,
                                     &size);
         // Sanity check size
