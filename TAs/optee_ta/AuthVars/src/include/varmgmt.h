@@ -51,6 +51,9 @@
  // Maximum possible storage (TA_DATA_SIZE) for volatile vars
 #define MAX_VOLATILE_STORAGE    (0x40000)   // = NV_AUTHVAR_SIZE / 2
 
+// (guid,name) digest quadword count
+#define TEE_DIGEST_QWORDS      ((TEE_SHA256_HASH_SIZE) / sizeof(UINT64))
+
 // Update if architected objectID length changes!
 #if TEE_OBJECT_ID_MAX_LEN > 64
 #error "Unexpected TEE_OBJECT_ID_MAX_LEN!"

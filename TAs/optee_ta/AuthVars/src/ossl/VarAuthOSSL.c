@@ -34,22 +34,30 @@
 #include <varauth.h>
 #include <varmgmt.h>
 
- // OSSL cert type
+// OpenSSL includes
+#include <openssl/objects.h>
+#include <openssl/x509.h>
+#include <openssl/x509v3.h>
+#include <openssl/pkcs7.h>
+
+// Usage for #def'ed GUIDs
+extern const GUID EfiCertX509Guid;
+extern const GUID EfiCertTypePKCS7Guid;
+
+// OpenSSL certificate type
 typedef struct _CRYPTOAPI_BLOB {
     ULONG   cbData;
     UCHAR   *pbData;
-} CERTIFICATE, *PCERTIFICATE, CRYPT_DATA_BLOB, *PCRYPT_DATA_BLOB;
+} CRYPT_DATA_BLOB, *PCRYPT_DATA_BLOB;
 
 //
 // Library-specific functions (implemented for each of OSSL, WolfSSL, etc.):
 //  1. FreeCertList            - Free resources associated with Certificate(s)
 //  2. Pkcs7Verify             - Validate PKCS7 data
 //  3. PopulateCerts           - Pull certificate(s) from secure boot variables
-//  4. Certificate type        - For OpenSSL: PCRYPT_DATA_BLOB
 //
 // Static library-specific functions (helper functions):
 //  1. ParseSecurebootVariable - Dependency of PopulateCerts
-//  2. Other(s)                - For OpenSSL: X509VerifyCb()
 //
 // External dependencies for Library-specific functions:
 //  1. WrapPkcs7Data          - General purpose PKCS7 wrapper
@@ -63,44 +71,38 @@ typedef struct _CRYPTOAPI_BLOB {
 
 VOID
 FreeCertList(
-    PVOID       CertList,           // IN
-    UINT32      CertCount           // IN
+    PCRYPT_DATA_BLOB CertList,      // IN
+    UINT32 CertCount                // IN
 );
 
 BOOLEAN
 Pkcs7Verify(
     CONST BYTE *P7Data,             // IN
-    UINTN P7Length,                 // IN
+    UINT32 P7Length,                // IN
     UINT32 CertCount,               // IN
-    CERTIFICATE *CertList,          // IN
+    CRYPT_DATA_BLOB *CertList,      // IN
     CONST BYTE *InData,             // IN
-    UINTN DataLength                // IN
+    UINT32 DataLength               // IN
 );
 
 TEE_Result
 PopulateCerts(
-    SECUREBOOT_VARIABLE Var1,       // IN
-    SECUREBOOT_VARIABLE Var2,       // IN
-    CERTIFICATE **Certs,            // INOUT              
+    SECUREBOOT_VARIABLE PK,         // IN
+    SECUREBOOT_VARIABLE KEK,        // IN
+    CRYPT_DATA_BLOB **Certs,        // INOUT              
     UINT32 *NumberOfCerts           // OUT
 );
 
 static
 TEE_Result
-ParseSecurebootVariables(
+ParseSecurebootVariable(
     PBYTE Data,                     // IN
     UINT32 DataSize,                // IN
     PARSE_SECURE_BOOT_OP Op,        // IN
-    CERTIFICATE *Certs,             // INOUT
+    CRYPT_DATA_BLOB *Certs,         // INOUT
     PUINT32 NumberOfCerts           // INOUT
 );
 
-static
-int
-X509VerifyCb(
-    int              Status,        // IN
-    X509_STORE_CTX  *Context        // IN
-);
 
 //
 // Extern (varauth.c)
@@ -110,10 +112,10 @@ extern
 BOOLEAN
 WrapPkcs7Data(
     CONST UINT8 *P7Data,            // IN
-    UINTN P7Length,                 // IN
+    UINT32 P7Length,                // IN
     BOOLEAN *WrapFlag,              // OUT
     UINT8 **WrapData,               // OUT
-    UINTN *WrapDataSize             // OUT
+    PUINT32 WrapDataSize            // OUT
 );
 
 extern
@@ -138,12 +140,11 @@ ReadSecurebootVariable(
 
 VOID
 FreeCertList(
-    PVOID       CertList,           // IN
-    UINT32      CertCount           // IN
+    PCRYPT_DATA_BLOB    CertList,           // IN
+    UINT32              CertCount           // IN
 )
 {
     UINT32 i;
-    PCRYPT_DATA_BLOB certs = CertList;
 
     // Validate parameters
     if (!CertCount || !CertList)
@@ -154,7 +155,7 @@ FreeCertList(
     // Free resources used on verify
     for (i = 0; i < CertCount; i++)
     {
-        TEE_Free(certs[i].pbData);
+        TEE_Free(CertList[i].pbData);
     }
 
     // Free list
@@ -164,11 +165,11 @@ FreeCertList(
 BOOLEAN
 Pkcs7Verify(
     CONST BYTE         *P7Data,         // IN
-    UINTN               P7Length,       // IN
+    UINT32              P7Length,       // IN
     UINT32              CertCount,      // IN
-    CERTIFICATE        *CertList,       // IN
+    CRYPT_DATA_BLOB    *CertList,       // IN
     CONST BYTE         *InData,         // IN
-    UINTN               DataLength      // IN
+    UINT32              DataLength      // IN
 )
 /*++
 
@@ -213,30 +214,17 @@ Pkcs7Verify(
     X509        *Cert;
     X509_STORE  *CertStore;
     UINT8       *SignedData;
-    UINT8       *Temp;
-    UINTN       SignedDataSize;
+    CONST UINT8 *Temp;
+    UINT32      SignedDataSize;
     BOOLEAN     Wrapped;
 
     //
     // Check input parameters.
     //
-    if (P7Data == NULL || TrustedCert == NULL || InData == NULL ||
-        P7Length > INT_MAX || CertLength > INT_MAX || DataLength > INT_MAX) {
+    if (P7Data == NULL || CertList == NULL || InData == NULL ||
+        P7Length > INT_MAX || CertCount > INT_MAX || DataLength > INT_MAX) {
         return FALSE;
     }
-
-    // TODO: PKCS7GETSIGNERS FIRST if NULL/0
-    //
-//    verifyStatus = Pkcs7GetSigners(AuthenticationData,
-//                                   AuthenticationDataSize,
-//                                   &signerCerts,
-//                                   &signerCertStackSize,
-//                                   &rootCert,
-//                                   &rootCertSize);
-//    if (!verifyStatus)
-//    {
-//        return FALSE;
-//    }
 
     Pkcs7 = NULL;
     DataBio = NULL;
@@ -246,6 +234,9 @@ Pkcs7Verify(
     //
     // Register & Initialize necessary digest algorithms for PKCS#7 Handling
     //
+    if (EVP_add_digest(EVP_md5()) == 0) {
+        return FALSE;
+    }
     if (EVP_add_digest(EVP_sha1()) == 0) {
         return FALSE;
     }
@@ -289,15 +280,11 @@ Pkcs7Verify(
         goto _Exit;
     }
 
-
-    //foreach certificate in list
-    {
-
-
     //
     // Read DER-encoded root certificate and Construct X509 Certificate
     //
-    Cert = d2i_X509(NULL, &TrustedCert, (long)CertLength);
+    Temp = CertList;
+    Cert = d2i_X509(NULL, &Temp, (long)CertCount);
     if (Cert == NULL) {
         goto _Exit;
     }
@@ -314,12 +301,6 @@ Pkcs7Verify(
     }
 
     //
-    // Register customized X509 verification callback function to support
-    // trusted intermediate certificate anchor.
-    //
-    CertStore->verify_cb = X509VerifyCb;
-
-    //
     // For generic PKCS#7 handling, InData may be NULL if the content is present
     // in PKCS#7 structure. So ignore NULL checking here.
     //
@@ -331,6 +312,13 @@ Pkcs7Verify(
     if (BIO_write(DataBio, InData, (int)DataLength) <= 0) {
         goto _Exit;
     }
+
+    //
+    // Allow partial certificate chains, terminated by a non-self-signed but
+    // still trusted intermediate certificate. Also disable time checks.
+    //
+    X509_STORE_set_flags(CertStore,
+        X509_V_FLAG_PARTIAL_CHAIN | X509_V_FLAG_NO_CHECK_TIME);
 
     //
     // OpenSSL PKCS7 Verification by default checks for SMIME (email signing) and
@@ -357,132 +345,31 @@ _Exit:
         OPENSSL_free(SignedData);
     }
 
-    if (signerCerts != NULL)
-    {
-        free(signerCerts);
-    }
-
-    if (rootCert != NULL)
-    {
-        free(rootCert);
-    }
-
-    return Status;
-}
-
-static
-int
-X509VerifyCb(
-    int              Status,
-    X509_STORE_CTX  *Context
-)
-/*++
-    Routine Description:
-
-        Verification callback function to override any existing callbacks in
-        OpenSSL for intermediate certificate supports.
-
-    Arguments:
-
-        Status - Original status before calling this callback.
-
-        Context - X509 store context.
-
-    Returns:
-
-        1   Current X509 certificate is verified successfully.
-
-        0   Verification failed.
-
---*/
-{
-    X509_OBJECT  *Obj;
-    INTN         Error;
-    INTN         Index;
-    INTN         Count;
-
-    Obj = NULL;
-    Error = (INTN)X509_STORE_CTX_get_error(Context);
-
-    //
-    // X509_V_ERR_UNABLE_TO_GET_ISSUER_CERT and X509_V_ERR_UNABLE_TO_GET_ISSUER_
-    // CERT_LOCALLY mean a X509 certificate is not self signed and its issuer
-    // can not be found in X509_verify_cert of X509_vfy.c.
-    // In order to support intermediate certificate node, we override the
-    // errors if the certification is obtained from X509 store, i.e. it is
-    // a trusted ceritifcate node that is enrolled by user.
-    // Besides,X509_V_ERR_CERT_UNTRUSTED and X509_V_ERR_UNABLE_TO_VERIFY_LEAF_SIGNATURE
-    // are also ignored to enable such feature.
-    //
-    if ((Error == X509_V_ERR_UNABLE_TO_GET_ISSUER_CERT) ||
-        (Error == X509_V_ERR_UNABLE_TO_GET_ISSUER_CERT_LOCALLY)) {
-        Obj = (X509_OBJECT *)TEE_Malloc(sizeof(X509_OBJECT), TEE_USER_MEM_HINT_NO_FILL_ZERO);
-        if (Obj == NULL) {
-            return 0;
-        }
-
-        Obj->type = X509_LU_X509;
-        Obj->data.x509 = Context->current_cert;
-
-        CRYPTO_w_lock(CRYPTO_LOCK_X509_STORE);
-
-        if (X509_OBJECT_retrieve_match(Context->ctx->objs, Obj)) {
-            Status = 1;
-        }
-        else {
-            //
-            // If any certificate in the chain is enrolled as trusted certificate,
-            // pass the certificate verification.
-            //
-            if (Error == X509_V_ERR_UNABLE_TO_GET_ISSUER_CERT_LOCALLY) {
-                Count = (INTN)sk_X509_num(Context->chain);
-                for (Index = 0; Index < Count; Index++) {
-                    Obj->data.x509 = sk_X509_value(Context->chain, (int)Index);
-                    if (X509_OBJECT_retrieve_match(Context->ctx->objs, Obj)) {
-                        Status = 1;
-                        break;
-                    }
-                }
-            }
-        }
-
-        CRYPTO_w_unlock(CRYPTO_LOCK_X509_STORE);
-    }
-
-    if ((Error == X509_V_ERR_CERT_UNTRUSTED) ||
-        (Error == X509_V_ERR_UNABLE_TO_VERIFY_LEAF_SIGNATURE)) {
-        Status = 1;
-    }
-
-    if (Obj != NULL) {
-        OPENSSL_free(Obj);
-    }
-
     return Status;
 }
 
 TEE_Result
 PopulateCerts(
-    SECUREBOOT_VARIABLE Var1,       // IN
-    SECUREBOOT_VARIABLE Var2,       // IN
-    PCRYPT_DATA_BLOB *Certs,        // INOUT              
-    UINT32 *NumberOfCerts           // OUT
+    SECUREBOOT_VARIABLE PK,     // IN
+    SECUREBOOT_VARIABLE KEK,    // IN
+    PCRYPT_DATA_BLOB *Certs,    // INOUT              
+    PUINT32 CertCount           // OUT
 )
 /*++
 
     Routine Description:
 
-        Routine for reading and populating X509 certs from secureboot variables
+        Function to read and populate X509 certs from secureboot variables
 
     Arguments:
 
-        Var1 - Enum selecting secureboot variable
+        PK - Enum selecting secureboot variable
 
-        Var1 - Enum selecting secureboot variable
+        KEK - Enum selecting secureboot variable
 
         Certs - Supplies a list of certificates parsed from both the variables
 
-        NumberOfCerts - supplies number of certs in Certs
+        CertCount - supplies number of certs in Certs
 
     Returns:
 
@@ -490,112 +377,140 @@ PopulateCerts(
 
 --*/
 {
-    ERR_INIT_STATUS;
-    UINT32 count1 = 0, count2 = 0, i, parsedCount, data1Size = 0, data2Size = 0;
     PCRYPT_DATA_BLOB certs = NULL;
-    PBYTE data1 = NULL, data2 = NULL;
+    PVARIABLE_GET_RESULT PKvar = NULL, KEKvar = NULL;
+    UINT32 PKcount = 0, KEKcount = 0;
+    UINT32 totalParsed, PKsize, KEKsize, i;
+    TEE_Result status;
+    BOOLEAN needKEK = FALSE;
 
-    //
-    // Read the variables
-    //
-
-    ERR_PASS(ReadSecurebootVariables(Var1,
-        &data1,
-        &data1Size));
-
-
-    if (Var2 != SecureBootVariableEnd)
+    // We know need the PK, how about KEK database?
+    if (KEK == SecureBootVariableKEK)
     {
-        ERR_PASS(ReadSecurebootVariables(Var2,
-            &data2,
-            &data2Size));
+        needKEK = TRUE;
     }
 
-    //
-    // First, find how many certs qualify and allocate memory for the list accordingly
-    //
-
-    ERR_PASS(ParseSecurebootVariables(data1,
-        data1Size,
-        ParseForX509Certs,
-        NULL,
-        &count1));
-
-    if (Var2 != SecureBootVariableEnd)
+    // Read the variable(s)
+    status = ReadSecurebootVariable(PK, &PKvar, &PKsize);
+    if (status != TEE_SUCCESS)
     {
-        ERR_PASS(ParseSecurebootVariables(data2,
-            data2Size,
-            ParseForX509Certs,
-            NULL,
-            &count2));
+        goto Cleanup;
     }
 
-    LOGA("Finished counting certs. Count1 = %u, Count2 = %u", count1, count2);
-
-    certs = WtrSecAllocateMemory(sizeof(CRYPT_DATA_BLOB) * (count1 + count2));
-
-    RET_ERROR_IF_NULL(certs, STATUS_NO_MEMORY);
-
-    RtlZeroMemory(certs,
-        sizeof(CRYPT_DATA_BLOB) * (count1 + count2));
-
-    LOG("Now populating certs");
-
-    parsedCount = count1;
-
-    ERR_PASS(ParseSecurebootVariables(data1,
-        data1Size,
-        ParseForX509Certs,
-        certs,
-        &parsedCount));
-
-    TREE_ASSERT(parsedCount == count1);
-
-    if (Var2 != SecureBootVariableEnd)
+    // Pick up x509 cert(s) from PK
+    status = ParseSecurebootVariable(PKvar->Data, PKsize, ParseOpX509, NULL, &PKcount);
+    if (status != TEE_SUCCESS)
     {
-        parsedCount = count2;
+        goto Cleanup;
+    }
 
-        ERR_PASS(ParseSecurebootVariables(data2,
-            data2Size,
-            ParseForX509Certs,
-            &certs[count1],
-            &parsedCount));
-        TREE_ASSERT(parsedCount == count2);
+    // Do we need to also collect certs from KEK database?
+    if (needKEK)
+    {
+        // Read the variable(s)
+        status = ReadSecurebootVariable(KEK, &KEKvar, &KEKsize);
+        if (status != TEE_SUCCESS)
+        {
+            goto Cleanup;
+        }
+
+        // Pick up x509 cert(s) from KEK
+        status = ParseSecurebootVariable(KEKvar->Data, KEKsize, ParseOpX509, NULL, &KEKcount);
+        if (status != TEE_SUCCESS)
+        {
+            goto Cleanup;
+        }
+    }
+
+    DMSG("Finished counting certs. Count1 = %u, Count2 = %u", PKcount, KEKcount);
+
+    certs = TEE_Malloc(sizeof(CRYPT_DATA_BLOB) * (PKcount + KEKcount), TEE_MALLOC_FILL_ZERO);
+    if (!certs)
+    {
+        status = TEE_ERROR_OUT_OF_MEMORY;
+        goto Cleanup;
+    }
+
+
+    // Now do the allocs
+    DMSG("Now populating certs");
+    totalParsed = PKcount;
+
+    status = ParseSecurebootVariable(PKvar->Data, PKsize, ParseOpX509, certs, &totalParsed);
+    if (status != TEE_SUCCESS)
+    {
+        DMSG("here");
+        goto Cleanup;
+    }
+
+    // Should not happen
+    if (totalParsed != PKcount)
+    {
+        TEE_Panic(TEE_ERROR_BAD_STATE);
+        status = TEE_ERROR_BAD_STATE;
+        goto Cleanup;
+    }
+
+    if (needKEK)
+    {
+        totalParsed = KEKcount;
+
+        status = ParseSecurebootVariable(KEKvar->Data, KEKsize, ParseOpX509, &certs[PKcount], &totalParsed);
+        if (status != TEE_SUCCESS)
+        {
+            DMSG("here");
+            goto Cleanup;
+        }
+
+        // Should not happen
+        if (totalParsed != KEKcount)
+        {
+            TEE_Panic(TEE_ERROR_BAD_STATE);
+            status = TEE_ERROR_BAD_STATE;
+            goto Cleanup;
+        }
     }
 
     *Certs = certs;
-    *NumberOfCerts = count1 + count2;
+    *CertCount = PKcount + KEKcount;
+    DMSG("NumberOfCerts: %x", CertCount);
 
-cleanup:
-    WtrSecFreeMemory(data1);
-    WtrSecFreeMemory(data2);
+Cleanup:
+    TEE_Free(PKvar);
+    TEE_Free(KEKvar);
 
-    if (!NT_SUCCESS(ERR_VAR))
+    if (status != TEE_SUCCESS)
     {
-        for (i = 0; i < (count1 + count2); i++)
+        for (i = 0; i < PKcount; i++)
         {
-            WtrSecFreeMemory(certs[i].pbData);
+            TEE_Free(certs[i].pbData);
         }
-        WtrSecFreeMemory(certs);
+
+        for (i = PKcount; i < (PKcount + KEKcount); i++)
+        {
+            TEE_Free(certs[i].pbData);
+        }
+
+        TEE_Free(certs);
     }
 
-    ERR_RETURN_STATUS;
+    return status;
 }
 
 static
 TEE_Result
-ParseSecurebootVariables(
+ParseSecurebootVariable(
     PBYTE Data,                     // IN
     UINT32 DataSize,                // IN
     PARSE_SECURE_BOOT_OP Op,        // IN
-    PCRYPT_DATA_BLOB Certs,         // INOUT
-    PUINT32 NumberOfCerts           // INOUT
+    CRYPT_DATA_BLOB *Certs,         // INOUT
+    PUINT32 CertCount               // INOUT
 )
 /*++
 
     Routine Description:
 
-        Routine for implementing UEFI GetNextVariableName operation
+        Function used to parse a retrieved secureboot variable
 
     Arguments:
 
@@ -605,10 +520,10 @@ ParseSecurebootVariables(
 
         Op - Opcode to choose between parsing all certs or only x509 certs
 
-        Certs - If NULL, NumberOfCerts contains total number of certs in variable filtered by Op
+        Certs - If NULL, CertCount receives total number of certs in variable filtered by Op
                 If non-NULL, Certs contains a list of certificates
 
-        NumberOfCerts - contains total number of certs in variable filtered by Op
+        CertCount - contains total number of certs in variable filtered by Op
 
     Returns:
 
@@ -616,107 +531,141 @@ ParseSecurebootVariables(
 
 --*/
 {
-    ERR_INIT_STATUS;
+    PBYTE crtPtr, sigListIndex, sigListLimit, certEntry, firstCert = NULL;
+    EFI_SIGNATURE_LIST *signatureList = NULL;
+    WIN_CERTIFICATE_UEFI_GUID *authPtr = NULL;
+    UINT32 sigListOffset, certCount = 0, i, index, listEntries = 0, certSize = 0;
+    TEE_Result status = TEE_SUCCESS;
+    BOOLEAN doAlloc = FALSE;
 
-    UINT32 numberOfCerts = 0, index = 0, i, numberOfEntries, certSize = 0;
-    PBYTE locationInSigLists, locationEnd, certEntry, firstCert = NULL;
-    EFI_SIGNATURE_LIST* signatureList;
-    BOOLEAN alloc = FALSE;
-
-    locationInSigLists = Data;
-    locationEnd = Data + DataSize;
-
+    // Validate size
     if (DataSize < sizeof(EFI_SIGNATURE_LIST))
     {
-        ERR_GENERATE(STATUS_INVALID_PARAMETER);
+        DMSG("here");
+        status = TEE_ERROR_BAD_PARAMETERS;
+        goto Cleanup;
     }
 
-    //
+    // Pickup offset to signature list structure(s)
+    authPtr = &((EFI_VARIABLE_AUTHENTICATION_2 *)Data)->AuthInfo;
+    sigListOffset = authPtr->Hdr.dwLength;
+
+    // Calculate start and end for list structure(s)
+    sigListIndex = (PBYTE)((UINT_PTR)authPtr + sigListOffset);
+    sigListLimit = Data + DataSize;
+
+    DMSG("DATA: %x DATASIZE: %x", Data, DataSize);
+    DMSG("slO: %x slI: %x slL: %x", sigListOffset, sigListIndex, sigListLimit);
+
     // Integer overflow check
-    //
-    if ((UINT32)locationEnd <= (UINT32)Data)
+    if ((UINT_PTR)sigListLimit <= (UINT_PTR)Data)
     {
-        ERR_GENERATE(STATUS_INVALID_PARAMETER);
+        DMSG("here");
+        status = TEE_ERROR_BAD_PARAMETERS;
+        goto Cleanup;
     }
 
-    while (locationInSigLists < locationEnd)
+    // Init cert list index
+    index = 0;
+
+    // Enumerate signature list(s)
+    while (sigListIndex < sigListLimit)
     {
-        alloc = FALSE;
-        signatureList = (EFI_SIGNATURE_LIST*)locationInSigLists;
+        doAlloc = FALSE;
+        signatureList = (EFI_SIGNATURE_LIST*)sigListIndex;
 
-        ERR_PASS(CheckSignatureListSanity(signatureList,
-            locationEnd,
-            &numberOfEntries));
+        DMSG("slO: %x slI: %x slL: %x", sigListOffset, sigListIndex, sigListLimit);
 
-        if (Op == ParseAllSignature)
+        // Sanity check signature list
+        status = CheckSignatureList(signatureList, sigListLimit, &listEntries);
+        if (status != TEE_SUCCESS)
         {
-            numberOfCerts += numberOfEntries;
+            DMSG("here");
+            goto Cleanup;
+        }
+        DMSG("listEntries: %x", listEntries);
+
+        if (Op == ParseOpAll)
+        {
+            certCount += listEntries;
             certSize = signatureList->SignatureSize;
             firstCert = (PBYTE)signatureList + sizeof(EFI_SIGNATURE_LIST);
-            alloc = TRUE;
+            doAlloc = TRUE;
         }
-
-        else if ((Op == ParseForX509Certs) &&
-            (memcmp(&signatureList->SignatureType,
-                &EfiCertX509Guid,
-                sizeof(GUID)) == 0))
+        else if (Op == ParseOpX509)
         {
-            numberOfCerts += numberOfEntries;
-            certSize = signatureList->SignatureSize - sizeof(EFI_SIGNATURE_DATA);
-            firstCert = (PBYTE)signatureList + sizeof(EFI_SIGNATURE_LIST) + sizeof(EFI_SIGNATURE_DATA);
-            alloc = TRUE;
-        }
-
-        if (alloc)
-        {
-            if (Certs != NULL)
+            if (!(memcmp(&signatureList->SignatureType, &EfiCertX509Guid, sizeof(GUID))))
             {
-                for (i = 0; i < numberOfEntries; i++)
-                {
-                    TREE_ASSERT(firstCert != NULL);
-
-                    certEntry = firstCert + (i * signatureList->SignatureSize);
-
-                    if (index >= *NumberOfCerts)
-                    {
-                        ERR_GENERATE(STATUS_INTERNAL_ERROR);
-                    }
-
-                    Certs[index].cbData = certSize;
-
-                    Certs[index].pbData = WtrSecAllocateMemory(certSize);
-
-                    RET_ERROR_IF_NULL(Certs[index].pbData, STATUS_NO_MEMORY);
-
-                    memmove(Certs[index].pbData,
-                        certEntry,
-                        certSize);
-
-                    index++;
-                }
+                certCount += listEntries;
+                certSize = signatureList->SignatureSize - sizeof(EFI_SIGNATURE_DATA);
+                firstCert = (PBYTE)signatureList + sizeof(EFI_SIGNATURE_LIST) + sizeof(EFI_SIGNATURE_DATA);
+                DMSG("here");
+                doAlloc = TRUE;
             }
         }
-
-        locationInSigLists += signatureList->SignatureListSize;
-    }
-
-    if (locationInSigLists != locationEnd)
-    {
-        ERR_GENERATE(STATUS_INVALID_SIGNATURE);
-    }
-
-    LOG("Done parsing variable");
-
-    *NumberOfCerts = numberOfCerts;
-
-cleanup:
-    if (!ERR_SUCCESS(ERR_VAR))
-    {
-        for (i = 0; (i < index) && (i < *NumberOfCerts); i++)
+        else
         {
-            WtrSecFreeMemory(Certs[i].pbData);
+            // Bad Op value
+            DMSG("here");
+            status = TEE_ERROR_BAD_PARAMETERS;
+            goto Cleanup;
         }
+
+        //  Do we have certs to parse and a list to add them to?
+        if ((doAlloc) && (Certs != NULL))
+        {
+            for (i = 0; i < listEntries; i++)
+            {
+                // If we didn't find anything, we shouldn't be here
+                if (!(firstCert))
+                {
+                    TEE_Panic(TEE_ERROR_BAD_STATE);
+                    status = TEE_ERROR_BAD_STATE;
+                    goto Cleanup;
+                }
+
+                // Calculate location of next cert entry
+                certEntry = firstCert + (i * signatureList->SignatureSize);
+
+                // Sanity check
+                if (index >= *CertCount)
+                {
+                    DMSG("here");
+                    status = TEE_ERROR_BAD_PARAMETERS;
+                    goto Cleanup;
+                }
+
+                // Alloc for cert (openssl)
+                if (!(crtPtr = TEE_Malloc(certSize, TEE_USER_MEM_HINT_NO_FILL_ZERO)))
+                {
+                    DMSG("out of memory size: %x", certSize);
+                    status = TEE_ERROR_OUT_OF_MEMORY;
+                    goto Cleanup;
+                }
+
+                // Add cert (openssl)
+                Certs[index].cbData = certSize;
+                Certs[index].pbData = crtPtr;
+                memmove(Certs[index].pbData, certEntry, certSize);
+                index++;
+            }
+        }
+        // Advance to next signature list
+        sigListIndex += signatureList->SignatureListSize;
     }
 
-    ERR_RETURN_STATUS;
+    // Index/limit mismatch?
+    if (sigListIndex != sigListLimit)
+    {
+        DMSG("here");
+        status = TEE_ERROR_BAD_PARAMETERS;
+        goto Cleanup;
+    }
+
+    // Update count with number of certs parsed
+    *CertCount = certCount;
+
+Cleanup:
+    // We assume our caller handles TEE_Free on non-TEE_SUCCESS status
+    return status;
 }

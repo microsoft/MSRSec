@@ -1198,7 +1198,7 @@ NvCreateVariable(
     PUEFI_VARIABLE  Var     // IN
 )
 {
-    BYTE hash[TEE_SHA256_HASH_SIZE];
+    UINT64 qHash[TEE_DIGEST_QWORDS];
     PVOID namePtr;
     TEE_OperationHandle opHandle;
     UINT32 length, dataSize;
@@ -1241,7 +1241,7 @@ NvCreateVariable(
 
     // Then name, finalizing hash
     namePtr = (PVOID)(Var->BaseAddress + Var->NameOffset);
-    status = TEE_DigestDoFinal(opHandle, namePtr, Var->NameSize, (PVOID)hash, &length);
+    status = TEE_DigestDoFinal(opHandle, namePtr, Var->NameSize, (PVOID)qHash, &length);
     if (status != TEE_SUCCESS)
     {
         DMSG("Failed to finalize digest operation");
@@ -1249,7 +1249,7 @@ NvCreateVariable(
     }
 
     // Assumes TEE_OBJECT_ID_MAX_LEN == 64!
-    VarList[i].ObjectID = *(PUINT64)hash;
+    VarList[i].ObjectID = qHash[0];
     
     // Attempt to create an object for this var
     status = TEE_CreatePersistentObject(TEE_STORAGE_PRIVATE,

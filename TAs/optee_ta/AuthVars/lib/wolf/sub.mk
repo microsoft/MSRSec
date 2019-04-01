@@ -25,6 +25,9 @@ $(WOLF_ROOT)/README:
 
 global-incdirs-y += wolf_symlink
 
+#
+# REVISIT: Trim this list for AuthVars
+#
 wolf_crypt_files = \
  wolf_symlink/wolfcrypt/src/aes.c \
  wolf_symlink/wolfcrypt/src/asn.c \

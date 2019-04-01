@@ -94,11 +94,11 @@ FreeCertList(
 BOOLEAN
 Pkcs7Verify(
     CONST BYTE *P7Data,             // IN
-    UINTN P7Length,                 // IN
+    UINT32 P7Length,                // IN
     UINT32 CertCount,               // IN
     CERTIFICATE *CertList,          // IN
     CONST BYTE *InData,             // IN
-    UINTN DataLength                // IN
+    UINT32 DataLength               // IN
 );
 
 TEE_Result
@@ -134,10 +134,10 @@ extern
 BOOLEAN
 WrapPkcs7Data(
     CONST UINT8 *P7Data,            // IN
-    UINTN P7Length,                 // IN
+    UINT32 P7Length,                // IN
     BOOLEAN *WrapFlag,              // OUT
     UINT8 **WrapData,               // OUT
-    UINTN *WrapDataSize             // OUT
+    PUINT32 WrapDataSize            // OUT
 );
 
 extern
@@ -189,11 +189,11 @@ FreeCertList(
 BOOLEAN
 Pkcs7Verify(
     CONST BYTE         *P7Data,         // IN
-    UINTN               P7Length,       // IN
+    UINT32              P7Length,       // IN
     UINT32              CertCount,      // IN
     CERTIFICATE        *CertList,       // IN
     CONST BYTE         *InData,         // IN
-    UINTN               DataLength      // IN
+    UINT32              DataLength      // IN
 )
 /*++
 
@@ -243,7 +243,7 @@ Pkcs7Verify(
     BYTE *signedData = NULL;
     DecodedCert *certList = NULL;
     DecodedCert *match = NULL;
-    UINTN signedDataSize = 0;
+    UINT32 signedDataSize = 0;
     UINT32 i, p = 0; // msg Ptr 
     UINT32 startOfPtr, endOfPtr;
     UINT32 count = 0, index = 0;
@@ -606,14 +606,14 @@ ParseSecurebootVariable(
     sigListOffset = authPtr->Hdr.dwLength;
 
     // Calculate start and end for list structure(s)
-    sigListIndex = (PBYTE)((UINTN)authPtr + sigListOffset);
+    sigListIndex = (PBYTE)((UINT_PTR)authPtr + sigListOffset);
     sigListLimit = Data + DataSize;
 
     DMSG("DATA: %x DATASIZE: %x", Data, DataSize);
     DMSG("slO: %x slI: %x slL: %x", sigListOffset, sigListIndex, sigListLimit);
 
     // Integer overflow check
-    if ((UINTN)sigListLimit <= (UINTN)Data)
+    if ((UINT_PTR)sigListLimit <= (UINT_PTR)Data)
     {
         DMSG("here");
         status = TEE_ERROR_BAD_PARAMETERS;
@@ -723,10 +723,10 @@ Cleanup:
 
 TEE_Result
 PopulateCerts(
-    SECUREBOOT_VARIABLE PK,
-    SECUREBOOT_VARIABLE KEK,
-    CERTIFICATE **Certs,
-    PUINT32 CertCount
+    SECUREBOOT_VARIABLE PK,     // IN
+    SECUREBOOT_VARIABLE KEK,    // IN
+    CERTIFICATE **Certs,        // INOUT
+    PUINT32 CertCount           // OUT
 )
 /*++
 
@@ -754,7 +754,7 @@ PopulateCerts(
     PVARIABLE_GET_RESULT PKvar = NULL, KEKvar = NULL;
     UINT32 PKcount = 0, KEKcount = 0;
     UINT32 totalParsed, PKsize, KEKsize, i;
-    TEE_Result status = TEE_ERROR_ACCESS_DENIED;
+    TEE_Result status;
     BOOLEAN needKEK = FALSE;
 
     // We know need the PK, how about KEK database?
@@ -799,7 +799,7 @@ PopulateCerts(
     }
 
     // Alloc space for collected certs
-    certs = TEE_Malloc((sizeof(CERTIFICATE) * (PKcount + KEKcount)), TEE_USER_MEM_HINT_NO_FILL_ZERO);
+    certs = TEE_Malloc((sizeof(CERTIFICATE) * (PKcount + KEKcount)), TEE_MALLOC_FILL_ZERO);
     if (!certs)
     {
         status = TEE_ERROR_OUT_OF_MEMORY;

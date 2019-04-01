@@ -92,8 +92,6 @@ typedef uint64_t            UINT64;
 typedef intptr_t    INT_PTR;
 typedef uintptr_t   UINT_PTR;
 
-typedef uintptr_t   UINTN;
-
 #ifdef _WIN64
 typedef signed long long    LONG_PTR;
 typedef unsigned long long  ULONG_PTR;

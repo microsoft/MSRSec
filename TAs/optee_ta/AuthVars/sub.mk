@@ -26,10 +26,8 @@ CPPFLAGS += -DTHIRTY_TWO_BIT -DCFG_TEE_TA_LOG_LEVEL=$(CFG_TEE_TA_LOG_LEVEL) -D_A
 
 ifeq ($(CFG_ARM64_ta_arm64),y)
 CPPFLAGS += -mstrict-align
-CPPFLAGS += -DfTPMARM64=1
 else
 CPPFLAGS += -mno-unaligned-access
-CPPFLAGS += -DfTPMARM32=1
 endif
 
 ifeq ($(CFG_TA_DEBUG),y)
@@ -56,7 +54,6 @@ subdirs-y += lib
 
 global-incdirs-y += src/include
 
-
 srcs-y += src/varops.c
 srcs-y += src/varauth.c
 srcs-y += src/varmgmt.c
@@ -73,6 +70,7 @@ else
 # Using OpenSSL
 #
 global-incdirs-y += src/ossl
+srcs-y += src/ossl/RuntimeSupport.c
 srcs-y += src/ossl/VarAuthOSSL.c
 endif
 

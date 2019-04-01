@@ -89,10 +89,10 @@ static CONST SECUREBOOT_VARIABLE_INFO SecurebootVariableInfo[] =
 BOOLEAN
 WrapPkcs7Data(
     CONST UINT8 *P7Data,            // IN
-    UINTN P7Length,                 // IN
+    UINT32 P7Length,                // IN
     BOOLEAN *WrapFlag,              // OUT
     UINT8 **WrapData,               // OUT
-    UINTN *WrapDataSize             // OUT
+    PUINT32 WrapDataSize            // OUT
 );
 
 TEE_Result
@@ -177,11 +177,11 @@ extern
 BOOLEAN
 Pkcs7Verify(
     CONST BYTE *P7Data,             // IN
-    UINTN P7Length,                 // IN
+    UINT32 P7Length,                // IN
     UINT32 CertCount,               // IN
     VOID *CertList,                 // IN
     CONST BYTE *InData,             // IN
-    UINTN DataLength                // IN
+    UINT32 DataLength               // IN
 );
 
 extern
@@ -199,11 +199,11 @@ PopulateCerts(
 
 BOOLEAN
 WrapPkcs7Data(
-    CONST UINT8  *P7Data,           // IN
-    UINTN        P7Length,          // IN
-    BOOLEAN      *WrapFlag,         // OUT
-    UINT8        **WrapData,        // OUT
-    UINTN        *WrapDataSize      // OUT
+    CONST UINT8 *P7Data,            // IN
+    UINT32 P7Length,                // IN
+    BOOLEAN *WrapFlag,              // OUT
+    UINT8 **WrapData,               // OUT
+    PUINT32 WrapDataSize            // OUT
 )
 /*++
     Routine Descrition:
@@ -615,7 +615,7 @@ AuthenticateSetVariable(
         status = VerifyTime(&efiTime, prevEfiTime);
         if (status != TEE_SUCCESS)
         {
-            DMSG("FAILED VerifyTime %lx", (UINTN)Var->ExtAttribOffset);
+            DMSG("FAILED VerifyTime %lx", Var->ExtAttribOffset);
             goto Cleanup;
         }
     }
