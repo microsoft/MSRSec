@@ -3,7 +3,6 @@
 
 #include "sassl_common.h"
 #include "stdarg.h"
-#include "sassl/entropy_override.h"
 #include "sassl/sassl_debug.h"
 
 static inline char *getenv(const char *name)
