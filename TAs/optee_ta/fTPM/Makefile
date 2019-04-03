@@ -1,4 +1,4 @@
-BINARY=bc50d971-d4c9-42c4-82cb-343fb7f37896
+BINARY= 53bab89c-b864-4d7e-acbc-33c07a9c1b8d
 
 O ?= ../out/fTPM
 SUBMODULE_ROOT := ../../../external
