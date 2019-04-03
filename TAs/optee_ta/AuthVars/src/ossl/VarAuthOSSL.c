@@ -40,15 +40,15 @@
 #include <openssl/x509v3.h>
 #include <openssl/pkcs7.h>
 
-// Usage for #def'ed GUIDs
-extern const GUID EfiCertX509Guid;
-extern const GUID EfiCertTypePKCS7Guid;
-
 // OpenSSL certificate type
 typedef struct _CRYPTOAPI_BLOB {
     ULONG   cbData;
     UCHAR   *pbData;
 } CRYPT_DATA_BLOB, *PCRYPT_DATA_BLOB;
+
+// Usage for #def'ed GUIDs
+extern const GUID EfiCertX509Guid;
+extern const GUID EfiCertTypePKCS7Guid;
 
 //
 // Library-specific functions (implemented for each of OSSL, WolfSSL, etc.):
@@ -89,8 +89,27 @@ TEE_Result
 PopulateCerts(
     SECUREBOOT_VARIABLE PK,         // IN
     SECUREBOOT_VARIABLE KEK,        // IN
-    CRYPT_DATA_BLOB **Certs,        // INOUT              
-    UINT32 *NumberOfCerts           // OUT
+    CRYPT_DATA_BLOB **Certs,        // OUT              
+    UINT32 *CertCount               // OUT
+);
+
+static
+BOOLEAN
+X509PopCertificate(
+    VOID *X509Stack,                // IN
+    UINT8 **Cert,                   // OUT
+    UINT32 *CertSize                // OUT
+);
+
+static
+BOOLEAN
+Pkcs7GetSigners(
+    CONST UINT8 *P7Data,            // IN
+    UINT32 P7Length,                // IN
+    UINT8 **CertStack,              // OUT
+    UINT32 *StackLength,            // OUT
+    UINT8 **TrustedCert,            // OUT
+    UINT32 *CertLength              // OUT
 );
 
 static
@@ -102,7 +121,6 @@ ParseSecurebootVariable(
     CRYPT_DATA_BLOB *Certs,         // INOUT
     PUINT32 NumberOfCerts           // INOUT
 );
-
 
 //
 // Extern (varauth.c)
@@ -140,9 +158,26 @@ ReadSecurebootVariable(
 
 VOID
 FreeCertList(
-    PCRYPT_DATA_BLOB    CertList,           // IN
+    CRYPT_DATA_BLOB    *CertList,           // IN
     UINT32              CertCount           // IN
 )
+/*++
+
+    Routine Description:
+
+        Frees resources associated with library-specific cert types
+
+    Arguments:
+
+        CertList - Pointer to a list of CRYPT_DATA_BLOB structures
+
+        CertCount - Number of entries in CertList
+
+    Returns:
+
+        None
+
+--*/
 {
     UINT32 i;
 
@@ -162,14 +197,358 @@ FreeCertList(
     TEE_Free(CertList);
 }
 
+/**
+  Pop single certificate from STACK_OF(X509).
+
+  If X509Stack, Cert, or CertSize is NULL, then return FALSE.
+
+  @param[in]  X509Stack       Pointer to a X509 stack object.
+  @param[out] Cert            Pointer to a X509 certificate.
+  @param[out] CertSize        Length of output X509 certificate in bytes.
+
+  @retval     TRUE            The X509 stack pop succeeded.
+  @retval     FALSE           The pop operation failed.
+
+**/
+static
+BOOLEAN
+X509PopCertificate(
+    VOID  *X509Stack,               // IN
+    UINT8 **Cert,                   // OUT
+    UINT32 *CertSize                // OUT
+)
+/*++
+
+    Routine Description:
+
+        Pop single certificate from STACK_OF(X509)
+
+    Arguments:
+
+        X509Stack - Pointer to X509 stack object
+
+        Cert - Buffer to receive X509 cert bytes
+
+        CertSize - Receives length in bytes of Cert
+
+    Returns:
+
+        TRUE - Success
+
+        FALSE - Otherwise
+
+--*/
+{
+    BIO *CertBio;
+    X509 *X509Cert;
+    STACK_OF(X509) *CertStack;
+    BUF_MEM *Ptr;
+    VOID *Buffer = NULL;
+    INT32 Length, Result;
+    BOOLEAN Status;
+
+    // Parameter validation
+    if (!X509Stack || !Cert || !CertSize)
+    {
+        Status = FALSE;
+        goto Cleanup;
+    }
+
+    // Init
+    CertStack = (STACK_OF(X509) *) X509Stack;
+    X509Cert = sk_X509_pop(CertStack);
+    if (X509Cert == NULL)
+    {
+        Status = FALSE;
+        goto Cleanup;
+    }
+
+    // New BIO
+    CertBio = BIO_new(BIO_s_mem());
+    if (CertBio == NULL)
+    {
+        Status = FALSE;
+        goto Cleanup;
+    }
+
+    // DER encode
+    Result = i2d_X509_bio(CertBio, X509Cert);
+    if (Result == 0)
+    {
+        Status = FALSE;
+        goto Cleanup;
+    }
+
+    // Get pointer to underlying BUF_MEM structure (retrieve length)
+    BIO_get_mem_ptr(CertBio, &Ptr);
+    Length = (INT32)(Ptr->length);
+    if (Length <= 0)
+    {
+        Status = FALSE;
+        goto Cleanup;
+    }
+
+    // Allocate buffer for cert
+    if (!(Buffer = TEE_Malloc(Length, TEE_MALLOC_FILL_ZERO)))
+    {
+        Status = FALSE;
+        goto Cleanup;
+    }
+
+    // Do the copy
+    Result = BIO_read(CertBio, Buffer, Length);
+    if (Result != Length)
+    {
+        Status = FALSE;
+        goto Cleanup;
+    }
+
+    // Outputs and success
+    *Cert = Buffer;
+    *CertSize = Length;
+    Status = TRUE;
+
+Cleanup:
+    BIO_free(CertBio);
+    if (!Status && Buffer)
+    {
+        TEE_Free(Buffer);
+    }
+
+    return Status;
+}
+
+static
+BOOLEAN
+Pkcs7GetSigners(
+    CONST UINT8 *P7Data,            // IN
+    UINT32 P7Length,                // IN
+    UINT8 **CertStack,              // OUT
+    UINT32 *StackLength,            // OUT
+    UINT8 **TrustedCert,            // OUT
+    UINT32 *CertLength              // OUT
+)
+/*++
+
+    Routine Description:
+
+        Get the signer's certificates from PKCS#7 signed data as described in
+        "PKCS #7: Cryptographic Message Syntax Standard". The input signed data
+        could be wrapped in a ContentInfo structure.
+
+        If P7Data, CertStack, StackLength, TrustedCert or CertLength is NULL,
+        then return FALSE. If P7Length overflow, then return FALSE.
+
+        Caution: This function may receive untrusted input. UEFI Authenticated
+        Variable is external input, so this function will do basic check for
+        PKCS#7 data structure.
+
+    Arguments:
+
+        P7Data - Pointer to the PKCS#7 message to verify.
+
+        P7Length - Length of the PKCS#7 message in bytes.
+
+        CertStack - Pointer to Signer's certificates retrieved from P7Data.
+                   
+        StackLength - Length of signer's certificates in bytes.
+  
+        TrustedCert - Pointer to a trusted certificate from Signer's certificates.
+
+        CertLength - Length of the trusted certificate in bytes.
+
+    Returns:
+
+        TRUE - Success
+
+        FALSE - Otherwise
+
+--*/
+{
+    PKCS7 *Pkcs7;
+    UINT8 *SignedData;
+    CONST UINT8 *Temp;
+    UINT32 SignedDataSize;
+    STACK_OF(X509) *Stack;
+    UINT8 *CertBuf, *OldBuf, *SingleCert;
+    UINT32 BufferSize, OldSize, SingleCertSize;
+    BOOLEAN Wrapped, Status;
+    UINT8 Index;
+
+    // Validate parameters
+    if ((P7Data == NULL) || (CertStack == NULL) || (StackLength == NULL) ||
+        (TrustedCert == NULL) || (CertLength == NULL) || (P7Length > INT_MAX))
+    {
+        return FALSE;
+    }
+
+    // REVISIT: Is this necessary?
+    Status = WrapPkcs7Data(P7Data, P7Length, &Wrapped, &SignedData, &SignedDataSize);
+    if (!Status)
+    {
+        return Status;
+    }
+
+    // Sanity check data size
+    if (SignedDataSize > INT_MAX)
+    {
+        Status = FALSE;
+        goto Cleanup;
+    }
+
+    // Assume failure
+    Status = FALSE;
+
+    // Init for Cleanup
+    Pkcs7 = NULL;
+    Stack = NULL;
+    CertBuf = NULL;
+    OldBuf = NULL;
+    SingleCert = NULL;
+
+    // Retrieve PKCS#7 Data
+    Temp = SignedData;
+    Pkcs7 = d2i_PKCS7(NULL, (const unsigned char **)&Temp, (int)SignedDataSize);
+    if (Pkcs7 == NULL)
+    {
+        Status = FALSE;
+        goto Cleanup;
+    }
+
+    // Check if it's PKCS#7 Signed Data
+    if (!PKCS7_type_is_signed(Pkcs7))
+    {
+        Status = FALSE;
+        goto Cleanup;
+    }
+
+    // Get signer's certs
+    Stack = PKCS7_get0_signers(Pkcs7, NULL, PKCS7_BINARY);
+    if (Stack == NULL)
+    {
+        Status = FALSE;
+        goto Cleanup;
+    }
+
+    //
+    // Convert CertStack to buffer in following format:
+    // UINT8  CertNumber;
+    // UINT32 Cert1Length;
+    // UINT8  Cert1[];
+    // UINT32 Cert2Length;
+    // UINT8  Cert2[];
+    // ...
+    // UINT32 CertnLength;
+    // UINT8  Certn[];
+    //
+    BufferSize = sizeof(UINT8);
+    OldSize = BufferSize;
+
+    // Iterate cert stack
+    for (Index = 0; ; Index++)
+    {
+        Status = X509PopCertificate(Stack, &SingleCert, &SingleCertSize);
+        if (!Status)
+        {
+            break;
+        }
+
+        OldSize = BufferSize;
+        OldBuf = CertBuf;
+        BufferSize = OldSize + SingleCertSize + sizeof(UINT32);
+
+        // Alloc buffer for new length (REVISIT: Consider TEE_Realloc)
+        CertBuf = TEE_Malloc(BufferSize, TEE_USER_MEM_HINT_NO_FILL_ZERO);
+        if (CertBuf == NULL)
+        {
+            Status = FALSE;
+            goto Cleanup;
+        }
+
+        // Free prev buffer
+        if (OldBuf != NULL)
+        {
+            memcpy(CertBuf, OldBuf, OldSize);
+            TEE_Free(OldBuf);
+            OldBuf = NULL;
+        }
+
+        // May be unaligned
+        memcpy((UINT32 *)(CertBuf + OldSize), (UINT32)SingleCertSize, sizeof(UINT32));
+
+        // Copy cert
+        memcpy(CertBuf + OldSize + sizeof(UINT32), SingleCert, SingleCertSize);
+
+        // Free pop'ed cert
+        TEE_Free(SingleCert);
+        SingleCert = NULL;
+    }
+
+    if (CertBuf != NULL) {
+
+        // Update CertNumber.
+        CertBuf[0] = Index;
+
+        // Outputs
+        *CertLength = BufferSize - OldSize - sizeof(UINT32);
+        *TrustedCert = TEE_Malloc(*CertLength, TEE_USER_MEM_HINT_NO_FILL_ZERO);
+        if (*TrustedCert == NULL)
+        {
+            Status = FALSE;
+            goto Cleanup;
+        }
+
+        // Outputs and success
+        memcpy(*TrustedCert, CertBuf + OldSize + sizeof(UINT32), *CertLength);
+        *CertStack = CertBuf;
+        *StackLength = BufferSize;
+        Status = TRUE;
+    }
+
+Cleanup:
+    // Release Resources
+    if (!Wrapped)
+    {
+        TEE_Free(SignedData);
+    }
+
+    if (Pkcs7 != NULL)
+    {
+        PKCS7_free(Pkcs7);
+    }
+
+    if (Stack != NULL)
+    {
+        sk_X509_pop_free(Stack, X509_free);
+    }
+
+    if (SingleCert != NULL)
+    {
+        TEE_Free(SingleCert);
+    }
+
+    if (!Status && (CertBuf != NULL))
+    {
+        TEE_Free(CertBuf);
+        *CertStack = NULL;
+    }
+
+    if (OldBuf != NULL) 
+    {
+        TEE_Free(OldBuf);
+    }
+
+    return Status;
+}
+
 BOOLEAN
 Pkcs7Verify(
-    CONST BYTE         *P7Data,         // IN
-    UINT32              P7Length,       // IN
-    UINT32              CertCount,      // IN
-    CRYPT_DATA_BLOB    *CertList,       // IN
-    CONST BYTE         *InData,         // IN
-    UINT32              DataLength      // IN
+    CONST BYTE *P7Data,         // IN
+    UINT32 P7Length,            // IN
+    UINT32 CertCount,           // IN
+    CRYPT_DATA_BLOB *CertList,  // IN
+    CONST BYTE *InData,         // IN
+    UINT32 DataLength           // IN
 )
 /*++
 
@@ -208,32 +587,31 @@ Pkcs7Verify(
 
 --*/
 {
-    PKCS7       *Pkcs7;
-    BIO         *DataBio;
-    BOOLEAN     Status;
-    X509        *Cert;
-    X509_STORE  *CertStore;
-    UINT8       *SignedData;
+    PKCS7 *Pkcs7;
+    BIO *DataBio;
+    X509 *Cert;
+    X509_STORE *CertStore;
+    UINT8 *SignedData;
     CONST UINT8 *Temp;
-    UINT32      SignedDataSize;
-    BOOLEAN     Wrapped;
+    UINT8 *signerCerts = NULL, *rootCert = NULL;
+    UINT32 i, SignedDataSize;
+    UINT32 rootCertSize, signerCertStackSize;
+    BOOLEAN Wrapped, Status;
 
-    //
-    // Check input parameters.
-    //
-    if (P7Data == NULL || CertList == NULL || InData == NULL ||
-        P7Length > INT_MAX || CertCount > INT_MAX || DataLength > INT_MAX) {
+    // Parameter validation
+    if ((P7Data == NULL) || (InData == NULL) || (P7Length > INT_MAX) ||
+        (CertCount > INT_MAX) || (DataLength > INT_MAX))
+    {
         return FALSE;
     }
 
+    // Init for Cleanup
     Pkcs7 = NULL;
     DataBio = NULL;
     Cert = NULL;
     CertStore = NULL;
 
-    //
     // Register & Initialize necessary digest algorithms for PKCS#7 Handling
-    //
     if (EVP_add_digest(EVP_md5()) == 0) {
         return FALSE;
     }
@@ -253,96 +631,144 @@ Pkcs7Verify(
         return FALSE;
     }
 
+    // REVISIT: Is this necessary?
     Status = WrapPkcs7Data(P7Data, P7Length, &Wrapped, &SignedData, &SignedDataSize);
-    if (!Status) {
-        return Status;
+    if (!Status)
+    {
+        goto Cleanup;
     }
 
-    Status = FALSE;
-
-    //
-    // Retrieve PKCS#7 Data (DER encoding)
-    //
-    if (SignedDataSize > INT_MAX) {
-        goto _Exit;
+    // Retrieve PKCS#7 Data
+    if (SignedDataSize > INT_MAX)
+    {
+        Status = FALSE;
+        goto Cleanup;
     }
 
+    // Decode PKCS7 data
     Temp = SignedData;
     Pkcs7 = d2i_PKCS7(NULL, (const unsigned char **)&Temp, (int)SignedDataSize);
-    if (Pkcs7 == NULL) {
-        goto _Exit;
+    if (Pkcs7 == NULL)
+    {
+        Status = FALSE;
+        goto Cleanup;
     }
 
-    //
-    // Check if it's PKCS#7 Signed Data (for Authenticode Scenario)
-    //
-    if (!PKCS7_type_is_signed(Pkcs7)) {
-        goto _Exit;
+    // Check if it's PKCS#7 Signed Data
+    if (!PKCS7_type_is_signed(Pkcs7))
+    {
+        Status = FALSE;
+        goto Cleanup;
     }
 
-    //
-    // Read DER-encoded root certificate and Construct X509 Certificate
-    //
-    Temp = CertList;
-    Cert = d2i_X509(NULL, &Temp, (long)CertCount);
-    if (Cert == NULL) {
-        goto _Exit;
-    }
-
-    //
     // Setup X509 Store for trusted certificate
-    //
     CertStore = X509_STORE_new();
-    if (CertStore == NULL) {
-        goto _Exit;
-    }
-    if (!(X509_STORE_add_cert(CertStore, Cert))) {
-        goto _Exit;
+    if (CertStore == NULL)
+    {
+        Status = FALSE;
+        goto Cleanup;
     }
 
     //
+    // Were we given a set of certs?
+    //
+    if (CertList)
+    {
+        // Yes, process cert list
+        for (i = 0; i < CertCount; i++)
+        {
+            // DER->X509
+            Cert = d2i_X509(NULL, CertList[i].pbData, CertList[i].cbData);
+            if (Cert == NULL)
+            {
+                Status = FALSE;
+                goto Cleanup;
+            }
+
+            // Add to trusted cert store
+            if (!(X509_STORE_add_cert(CertStore, Cert)))
+            {
+                Status = FALSE;
+                goto Cleanup;
+            }
+        }
+
+    }
+    else
+    {
+        // No, get signers
+        Status = Pkcs7GetSigners(P7Data,
+                                 P7Length,
+                                 &signerCerts,
+                                 &signerCertStackSize,
+                                 &rootCert,
+                                 &rootCertSize);
+
+        // Free this up front, we don't need it.
+        if (signerCerts)
+        {
+            TEE_Free(signerCerts);
+        }
+
+        // Error on getting signer's certs?
+        if (!Status)
+        {
+            goto Cleanup;
+        }
+
+        // DER->X509
+        Cert = d2i_X509(NULL, rootCert, rootCertSize);
+        if (Cert == NULL)
+        {
+            Status = FALSE;
+            goto Cleanup;
+        }
+
+        // Add to trusted cert store
+        if (!(X509_STORE_add_cert(CertStore, Cert)))
+        {
+            Status = FALSE;
+            goto Cleanup;
+        }
+    }
+
     // For generic PKCS#7 handling, InData may be NULL if the content is present
     // in PKCS#7 structure. So ignore NULL checking here.
-    //
     DataBio = BIO_new(BIO_s_mem());
-    if (DataBio == NULL) {
-        goto _Exit;
+    if (DataBio == NULL)
+    {
+        Status = FALSE;
+        goto Cleanup;
     }
 
-    if (BIO_write(DataBio, InData, (int)DataLength) <= 0) {
-        goto _Exit;
+    if (BIO_write(DataBio, InData, (int)DataLength) <= 0)
+    {
+        Status = FALSE;
+        goto Cleanup;
     }
 
-    //
     // Allow partial certificate chains, terminated by a non-self-signed but
     // still trusted intermediate certificate. Also disable time checks.
-    //
     X509_STORE_set_flags(CertStore,
         X509_V_FLAG_PARTIAL_CHAIN | X509_V_FLAG_NO_CHECK_TIME);
 
-    //
     // OpenSSL PKCS7 Verification by default checks for SMIME (email signing) and
     // doesn't support the extended key usage for Authenticode Code Signing.
     // Bypass the certificate purpose checking by enabling any purposes setting.
-    //
     X509_STORE_set_purpose(CertStore, X509_PURPOSE_ANY);
 
-    //
     // Verifies the PKCS#7 signedData structure
-    //
     Status = (BOOLEAN)PKCS7_verify(Pkcs7, NULL, CertStore, DataBio, NULL, PKCS7_BINARY);
 
-_Exit:
-    //
+Cleanup:
     // Release Resources
-    //
     BIO_free(DataBio);
     X509_free(Cert);
     X509_STORE_free(CertStore);
     PKCS7_free(Pkcs7);
-
-    if (!Wrapped) {
-        OPENSSL_free(SignedData);
+    if (!Wrapped)
+    {
+        TEE_Free(SignedData);
     }
 
     return Status;
@@ -352,8 +778,8 @@ TEE_Result
 PopulateCerts(
     SECUREBOOT_VARIABLE PK,     // IN
     SECUREBOOT_VARIABLE KEK,    // IN
-    PCRYPT_DATA_BLOB *Certs,    // INOUT              
-    PUINT32 CertCount           // OUT
+    CRYPT_DATA_BLOB **Certs,    // OUT              
+    UINT32 *CertCount           // OUT
 )
 /*++
 
@@ -423,14 +849,12 @@ PopulateCerts(
     }
 
     DMSG("Finished counting certs. Count1 = %u, Count2 = %u", PKcount, KEKcount);
-
     certs = TEE_Malloc(sizeof(CRYPT_DATA_BLOB) * (PKcount + KEKcount), TEE_MALLOC_FILL_ZERO);
     if (!certs)
     {
         status = TEE_ERROR_OUT_OF_MEMORY;
         goto Cleanup;
     }
-
 
     // Now do the allocs
     DMSG("Now populating certs");
