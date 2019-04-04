@@ -21,7 +21,7 @@ remove_wolf_symlink:
 download_wolf: $(WOLF_ROOT)/README
 
 $(WOLF_ROOT)/README:
-	( cd ../../../external/; git submodule update --init wolfssl)
+	( cd $(SUBMODULE_ROOT); git submodule update --init wolfssl)
 
 global-incdirs-y += wolf_symlink
 
