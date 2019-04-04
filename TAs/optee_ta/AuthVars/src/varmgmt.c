@@ -227,8 +227,8 @@ AuthVarInitStorage(
                                           &(VarList[i].ObjectHandle));
 
         // Read object
-        status = TEE_ReadObjectData(TEE_STORAGE_PRIVATE,
-                                    (PVOID)&pVar,
+        status = TEE_ReadObjectData(VarList[i].ObjectHandle,
+                                    (PVOID)pVar,
                                     objInfo.dataSize,
                                     &size);
         // Sanity check size
@@ -776,6 +776,7 @@ AppendVariable(
     PBYTE dstPtr;
     UINT32 varSize, newSize, extAttribLen;
     TEE_Result  status = TEE_SUCCESS;
+    VARTYPE varType;
     DMSG("Appending to variable at 0x%lx", (UINT_PTR)Var);
 
     // First, is this a volatile variable?
@@ -848,12 +849,18 @@ AppendVariable(
         newSize = varSize + DataSize;
 
         // Attempt to realloc variable buffer
+        // Remove from the list incase the variable is moved.
+        RemoveEntryList(&Var->List);
         if (!(newVar = TEE_Realloc(Var, newSize)))
         {
             EMSG("non-volatile append error: out of memory");
             status = TEE_ERROR_OUT_OF_MEMORY;
             goto Cleanup;
         }
+
+        // Add back to the lists
+        GetVariableType(newVar->BaseAddress + newVar->NameOffset, &newVar->VendorGuid, Attributes, &varType);
+        InsertTailList(&VarInfo[varType].Head, &newVar->List);
 
         // Update fields and copy append data (realloc may have moved var)
         newVar->BaseAddress = newVar;
@@ -924,6 +931,7 @@ ReplaceVariable(
     UINT32 canFit, remaining, extAttribLen, reqSize;
     INT32 length; // Note signed!
     TEE_Result  status = TEE_SUCCESS;
+    VARTYPE varType;
 
     DMSG("Replacing variable at 0x%lx", (UINT_PTR)Var);
 
@@ -988,7 +996,7 @@ ReplaceVariable(
     else
     {
         // No, replace existing non-volatile variable.
-        FMSG("Replacing volatile variable");
+        FMSG("Replacing non-volatile variable");
 
         // Extended attributes
         if (ExtAttributes)
@@ -1006,12 +1014,18 @@ ReplaceVariable(
         reqSize = sizeof(UEFI_VARIABLE) + Var->NameSize + Var->ExtAttribSize + DataSize;
 
         // realloc variable
+        // Remove from the list incase the variable is moved.
+        RemoveEntryList(&Var->List);
         if (!(newVar = TEE_Realloc(Var, reqSize)))
         {
             EMSG("Replace NON volatile variable error: Out of memory");
             status = TEE_ERROR_OUT_OF_MEMORY;
             goto Cleanup;
         }
+
+        // Add back to the lists
+        GetVariableType(newVar->BaseAddress + newVar->NameOffset, &newVar->VendorGuid, Attributes, &varType);
+        InsertTailList(&VarInfo[varType].Head, &newVar->List);
 
         // Update variable fields and copy data (realloc may have moved var)
         newVar->BaseAddress = newVar;
@@ -1319,6 +1333,10 @@ NvUpdateVariable(
     // Pickup index into metadata
     i = Var->MetaIndex;
 
+    // Make sure the metadata still points to the correct address
+    // incase a realloc moved the variable.
+    VarList[i].Var = Var;
+    
     // Calculate new size of persistent object
     newSize = sizeof(UEFI_VARIABLE) + Var->NameSize + Var->ExtAttribSize + Var->DataSize;
 
