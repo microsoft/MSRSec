@@ -51,27 +51,38 @@ _plat__GetEPS(size_t Size, uint8_t *EndorsementSeed)
     TEE_Result Result = TEE_ERROR_ITEM_NOT_FOUND;
     uint8_t EPS[TEE_EPS_SIZE] = { 0 };
     size_t EPSLen;
+    size_t RandBytesGathered = 0;
+    uint32_t RandReturn;
 
-    IMSG("Size=%d",Size);
-    IMSG("EPS=%d",TEE_EPS_SIZE);
-
-    pAssert(Size <= (TEE_EPS_SIZE));
+    DMSG("EPS Size=%d", Size);
+    DMSG("EPS property size=%d",TEE_EPS_SIZE);
 
     Result = TEE_GetPropertyAsBinaryBlock(TEE_PROPSET_CURRENT_TA,
                                           "com.microsoft.ta.endorsementSeed",
                                           EPS,
                                           &EPSLen);
 
-    if ((EPSLen < Size) || (Result != TEE_SUCCESS)) {
+    if ((Result == TEE_SUCCESS) && (EPSLen >= Size)) {
+        memcpy(EndorsementSeed, EPS, Size);
+    } else {
         // We failed to access the property. We can't continue without it
         // and we can't just fail to manufacture, so randomize EPS and 
         // continue. If necessary, fTPM TA storage can be cleared, or the
         // TA updated, and we can trigger remanufacture and try again.
-        _plat__GetEntropy(EndorsementSeed, TEE_EPS_SIZE);
-        return;
+        IMSG("fTPM was unable to derive an EPS, falling back to random generation.");
+        
+        RandBytesGathered = 0;
+        while( RandBytesGathered < Size ) {
+            RandReturn = _plat__GetEntropy((EndorsementSeed + RandBytesGathered), (Size - RandBytesGathered));
+            FMSG("Got %d of %d bytes back for a total of %d", RandReturn, Size, RandBytesGathered);
+            if (RandReturn >= 0) {
+                RandBytesGathered += RandReturn;
+            } else {
+                EMSG("fTPM failed to generate a backup random EPS!");
+                TEE_Panic(TEE_ERROR_SECURITY);
+            }
+        }
     }
-
-    memcpy(EndorsementSeed, EPS, Size);
 
 #ifdef fTPMDebug
     {
