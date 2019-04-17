@@ -45,10 +45,11 @@
  // Maximum number of variables we'll track
 #define MAX_AUTHVAR_ENTRIES     (256)
 
- // MUST NOT EXCEED TA_DATA_SIZE (user_ta_header_defines.h)
+// (MAX_NV_STORAGE + MAX_VOLATILE_STORAGE) MUST NOT EXCEED TA_DATA_SIZE (user_ta_header_defines.h)
+// Maximum possible storage for non-volatile vars
 #define MAX_NV_STORAGE         (64 * 1024) // = 64k
 
- // Maximum possible storage (TA_DATA_SIZE) for volatile vars
+// Maximum possible storage for volatile vars
 #define MAX_VOLATILE_STORAGE    (64 * 1024)   // = 64k
 
 // (guid,name) digest quadword count
