@@ -239,7 +239,7 @@ X509PopCertificate(
 
 --*/
 {
-    BIO *CertBio;
+    BIO *CertBio = NULL;
     X509 *X509Cert;
     STACK_OF(X509) *CertStack;
     BUF_MEM *Ptr;
@@ -474,7 +474,7 @@ Pkcs7GetSigners(
         }
 
         // May be unaligned
-        memcpy((UINT32 *)(CertBuf + OldSize), (UINT32)SingleCertSize, sizeof(UINT32));
+        memcpy((UINT32 *)(CertBuf + OldSize), &SingleCertSize, sizeof(UINT32));
 
         // Copy cert
         memcpy(CertBuf + OldSize + sizeof(UINT32), SingleCert, SingleCertSize);
@@ -717,7 +717,7 @@ Pkcs7Verify(
         }
 
         // DER->X509
-        Cert = d2i_X509(NULL, rootCert, rootCertSize);
+        Cert = d2i_X509(NULL, &rootCert, rootCertSize);
         if (Cert == NULL)
         {
             Status = FALSE;
