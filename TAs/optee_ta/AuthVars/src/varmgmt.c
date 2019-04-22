@@ -128,6 +128,18 @@ IsSecureBootVar(
     PCGUID  VendorGuid              // IN
 );
 
+static
+TEE_Result
+NvOpenVariable(
+    AUTHVAR_META *VarMeta
+);
+
+static
+VOID
+NvCloseVariable(
+    AUTHVAR_META *VarMeta
+);
+
 #ifdef AUTHVAR_DEBUG
 static
 VOID
@@ -228,18 +240,19 @@ AuthVarInitStorage(
 
         s_NonVolatileSize += objInfo.dataSize;
 
-        // Open object
-        status = TEE_OpenPersistentObject(TEE_STORAGE_PRIVATE,
-                                          &(VarList[i].ObjectID),
-                                          sizeof(VarList[i].ObjectID),
-                                          TA_STORAGE_FLAGS,
-                                          &(VarList[i].ObjectHandle));
+        if (NvOpenVariable(&VarList[i]) != TEE_SUCCESS) {
+            EMSG("Failed to open NV handle");
+            TEE_Panic(status);
+        }
 
         // Read object
         status = TEE_ReadObjectData(VarList[i].ObjectHandle,
                                     (PVOID)pVar,
                                     objInfo.dataSize,
                                     &size);
+
+        NvCloseVariable(&VarList[i]);
+
         // Sanity check size
         if (objInfo.dataSize != size)
         {
@@ -317,6 +330,59 @@ AuthVarCloseStorage(
 {
     // TODO: This
     return TEE_SUCCESS;
+}
+
+TEE_Result
+NvOpenVariable(
+    AUTHVAR_META *VarMeta
+)
+/*++
+
+    Routine Description:
+
+        Open a handle for updating a non-volatile variable
+
+    Arguments:
+
+        Address of the variable meta data
+
+    Returns:
+
+        TEE_Result
+
+--*/
+{
+    // Open object
+    FMSG("Opening NV handle");
+    return TEE_OpenPersistentObject(TEE_STORAGE_PRIVATE,
+                                        &(VarMeta->ObjectID),
+                                        sizeof(VarMeta->ObjectID),
+                                        TA_STORAGE_FLAGS,
+                                        &(VarMeta->ObjectHandle));
+}
+
+VOID
+NvCloseVariable(
+    AUTHVAR_META *VarMeta
+)
+/*++
+
+    Routine Description:
+
+        Close a handle after updating a non-volatile variable
+
+    Arguments:
+
+        Address of the variable meta data
+
+    Returns:
+
+        None
+
+--*/
+{
+    FMSG("Closing NV handle");
+    TEE_CloseObject(VarMeta->ObjectHandle);
 }
 
 //
@@ -1346,6 +1412,8 @@ NvCreateVariable(
     // Update next free index
     AuthVarNextFreeIdx(&NextFreeIdx);
 
+    NvCloseVariable(&VarList[i]);
+
     // Success, return
     status = TEE_SUCCESS;
 
@@ -1384,6 +1452,11 @@ NvUpdateVariable(
     // Calculate new size of persistent object
     newSize = sizeof(UEFI_VARIABLE) + Var->NameSize + Var->ExtAttribSize + Var->DataSize;
 
+    if (NvOpenVariable(&VarList[i]) != TEE_SUCCESS) {
+        EMSG("Failed to open NV handle");
+        TEE_Panic(status);
+    }
+
     // Reset data position for object
     status = TEE_SeekObjectData(VarList[i].ObjectHandle, 0, TEE_DATA_SEEK_SET);
     if (status != TEE_SUCCESS)
@@ -1404,6 +1477,8 @@ NvUpdateVariable(
     {
         goto Cleanup;
     }
+
+    NvCloseVariable(&VarList[i]);
 
     // Success, return
     status = TEE_SUCCESS;
@@ -1434,6 +1509,11 @@ NvDeleteVariable(
     if (Var != VarList[i].Var)
     {
         TEE_Panic(TEE_ERROR_BAD_STATE);
+    }
+
+    if (NvOpenVariable(&VarList[i]) != TEE_SUCCESS) {
+        EMSG("Failed to open NV handle");
+        TEE_Panic(status);
     }
 
     // Close and delete backing object
