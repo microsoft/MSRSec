@@ -1,0 +1,14 @@
+{
+    "Registrations": [
+        {
+            "component": {
+                "type": "git",
+                "git": {
+                    "repositoryUrl": "https://github.com/ms-iot/optee_os",
+                    "branch": "ms-iot"
+                }
+            }
+        }
+    ],
+    "Version": 1
+}
