@@ -2,7 +2,7 @@
 export V?=0
 
 .PHONY: all ftpm authvars
-all: fTPM authvars
+all: ftpm authvars
 ftpm:
 	$(MAKE) -C fTPM CROSS_COMPILE=$(TA_CROSS_COMPILE)
 authvars:
