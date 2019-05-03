@@ -5,9 +5,10 @@ This folder contains shared libraries used by the TAs. The OP-TEE build system d
 Each TA may also need to utilize the library in a slightly different manner, so each TA needs a seperate `sub.mk` file. To achieve this each library's `sub.mk` is responsible for either copying the requried files locally, or setting up a symlink to the external folder.
 
 ## Using the Libraries
-The following lines in the root `sub.mk` file make sure that the libraries are correctly setup before they are referenced.
+The following lines in the TA root `sub.mk` file make sure that the libraries are correctly setup before they are referenced.
 ```makefile
 all: create_lib_symlinks
+clean: clean_lib_symlinks
 subdirs-y += lib
 ```
 Inside `lib/sub.mk` each library is added depending on the needs of the TA.
@@ -35,7 +36,7 @@ endif
 ```
 ## Types of Libraries
 ### Symlinks
-The `lib/my_lib/sub.mk` file will automatically create the symlinks when needed. Currently all libraries are backed by submodules which are also automatically initialized and downloaded if they are not already pressent.
+The `lib/my_lib/sub.mk` file should automatically create the symlinks when needed. Currently all libraries are backed by submodules which are also automatically initialized and downloaded if they are not already pressent.
 ```makefile
 ./lib/my_lib/my_lib_symlink: remove_my_lib_symlink download_my_lib
     ...
@@ -52,4 +53,4 @@ $(MY_LIB_ROOT)/README:
 ```
 
 ### Copying Files
-In some cases it is easier to just copy a few files as needed (ie OpenSSL's libcrypto.a and supporting files). In this case symlinks are not needed, instead the files are simply copied locally. The OpenSSL library calls the makefile in `external\ossl` to create a copy of `libcrypto.a` which is then copied locally. The OpenSSL makefile (see /external/ossl/README.md for details) configures and builds a custom libcrypto.a when called. The library makefile then copies over the required supporting files, headers, and libcrypto.a.
+In some cases it is easier to just copy a few files as needed (ie OpenSSL's libcrypto.a and supporting files). In this case symlinks are not needed, instead the files are simply copied locally. The OpenSSL library calls the makefile in `external/ossl` to create a copy of `libcrypto.a` which is then copied locally. The OpenSSL makefile (see /external/ossl/README.md for details) configures and builds a custom libcrypto.a when called. The library makefile then copies over the required supporting files, headers, and libcrypto.a.

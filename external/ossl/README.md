@@ -2,7 +2,7 @@ Stand Alone OpenSSL Crypto
 ==========================
 This folder contains the necessary infrastructure to compile `libcrypto.a` for use as a statically linked library. Traditionally OpenSSL relies on an underlying operating system to supply some of its functionality (stdlib, random number generation, time, etc.).
 
-This is not feasible for OP-TEE since many of functions used by OpenSSL are not available, and there is no Unix like set of system calls. OP-TEE only implements only a limited subset of the standard library (no `strcat()` for example, only `strncat()`).
+This is not feasible for OP-TEE since many of functions used by OpenSSL are not available, and there is no Unix like set of system calls. OP-TEE only implements a limited subset of the standard library (no `strcat()` for example, only `strncat()`).
 
 ## Building libcrypto.a
 A makefile is provided which automatically configures and builds `libcrypto.a` from OpenSSL version 1.1.1.
@@ -25,7 +25,7 @@ make distclean
 ## Understanding Stand Alone OpenSSL
 
 ### Compiling OpenSSL with no Operating System
-For this repo (Firmware TPM and Authenticated Variables) a very limited subset of OpenSSL features are needed, so most are turned off using the OpenSSL config tool:
+For this repo (Firmware TPM and Authenticated Variables) a very limited subset of OpenSSL features are needed, so most options are turned off using the OpenSSL config tool:
 ```
 OPENSSL_CONFIG = \
 --with-rand-seed=getrandom \
@@ -92,9 +92,9 @@ static inline char *strcat(char *dest, const char *src)
 ```
 
 ### Implementing the Remapped Functions
-The remapped `sassl_*()` functions must be defined in the binary which the crypto library is to be linked to. In the case of the OP-TEE TAs `/ossl/optee_lib/optee_stdlib.c` implements the `sassl_*()` functions.
+The remapped `sassl_*()` functions must be defined in the binary which the crypto library is to be linked with. In the case of the OP-TEE TAs `/ossl/optee_lib/optee_stdlib.c` implements the `sassl_*()` functions. If `optee_stdlib.c` is included as part of the TA then `libcrypto.a` should link successuflly.
 
-The implementations either directly map the calls to functions provided by OP-TEE, provide a basic implementation, or are stubbed out and generate an error. For example OP-TEE provides an implementation of `memcpy()` so it is sufficient to simply pass the call along. `strcasecmp()` is not currently implemented by OP-TEE so a basic implementation is provided here, and `closedir()` is not required for any of the TA code so is stubbed out.
+The implementations either directly map the calls to functions provided by OP-TEE, provide a basic implementation, or are stubbed out and generate an error. For example OP-TEE provides an implementation of `memcpy()` so it is sufficient to simply pass the call along. `strcasecmp()` is not currently implemented by OP-TEE so a basic implementation is provided here, and `closedir()` is not required for any of the TA code so it is stubbed out.
 ```C
 // Remap:
 void *sassl_memcpy(void *dest, const void *src, size_t n) {
@@ -120,7 +120,7 @@ int sassl_closedir(void *dirp) {
 }
 ```
 #### Discovering Missing Implementations
-gcc will list all undefined references once libcrypto.a is linked into the final binary. To quickly get a list of `sassl_*()` functions which need to be added run:
+Gcc will list all undefined references once libcrypto.a is linked into the final binary. To quickly get a list of `sassl_*()` functions which need to be added run:
 ```bash
 make <your target here> | grep "undefined reference" | sed "s/.*\`//g" | sed "s/'.*//g" | sort | uniq
 ```

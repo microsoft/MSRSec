@@ -8,25 +8,27 @@ This variable store implements section 8.2 of the [UEFI Spec 2.7](https://uefi.o
 
 ### Crypto
 
-The AuthVars TA relies on external crypto libraries for PKCS7 signing using either OpenSSL or WolfSSL. See repo [README.md](../../../README.md#3-crypto-options) for more details.
+The AuthVars TA relies on external crypto libraries for PKCS7 signing using either OpenSSL or WolfSSL. See the repo [README.md](../../../README.md#3-crypto-options) for more details on selecting a crypto package.
 
-### Non-Volatile Storage
+### Volatile and Non-Volatile Storage
+
+The TA will store up to 64KB each of volatile and non-volatile variables (for a total of 128KB). This may be increased by changing `MAX_NV_STORAGE` or `MAX_VOLATILE_STROAGE`. The maxium heap size the TA will be allocated is controlled by `DATA_SIZE`, currently set to 2x the expected worst case and may need to be increased.
 
 The AuthVars TA's memory is backed by the OP-TEE file system. See [OP-TEE's documentation](https://optee.readthedocs.io/architecture/secure_storage.html) for details. Each variable is stored as a seperate OP-TEE storage object.
 
-When the TA is first loaded it enumerates and loads all of its existing variables into memory. OP-TEE's filesystem guarantees atomicity of I/O operations, which is a requirement of the UEFI spec.
+When the TA is first loaded it enumerates and loads all of its existing variables into memory. OP-TEE's filesystem guarantees atomicity of I/O operations, which is a requirement of the UEFI spec. The TA runs in single session mode so it only needs to access the underlying OP-TEE file system when updating or creating variables, otherwise it runs off the cached versions.
 
-This storage is currently encrypted by OP-TEE using a TA Storage Key (TSK) encryption key which is based on the device's unique hardware ID and the TPM's UUID.
+The storage is currently encrypted by OP-TEE using a TA Storage Key (TSK) encryption key which is based on the device's unique hardware ID and the TPM's UUID.
 
 ### Authenticated Variables
 
-The UEFI spec describes an authenticated variable store for use with Secure Boot. T
+The UEFI spec describes an authenticated variable store for use with Secure Boot. The TA supports variable reads and writes up to 16KB in size (this is a limitation of the rich OS side driver). This should allow for a reasonable set of Secure Boot keys to be stored.
 
 ## Debugging AuthVars
 
 ### Clearing Storage
 
-During development of OP-TEE, if the key derivation functions change, the non-volatile memory will become inaccessible. OP-TEE offers a flag which clears RPMB storage on every boot which can be used to reset all TA storage: `CFG_RPMB_RESET_FAT=y`. Note: This does not reset the RPMB key used to encrypt the backing storage, use `CFG_RPMB_TESTKEY=y` during development.
+During development of OP-TEE, if the key derivation functions change, the non-volatile memory will become inaccessible. OP-TEE offers a flag which clears RPMB storage on every boot which can be used to reset all TA storage. Recompile OP-TEE with `CFG_RPMB_RESET_FAT=y`. Note: This does not reset the RPMB key used to encrypt the backing storage, use `CFG_RPMB_TESTKEY=y` during development.
 
 ### Debug Output
 
