@@ -1,8 +1,8 @@
 TA Libraries
 ============
-This folder contains shared libraries used by the TAs. The OP-TEE build system does not work well with relative paths which go below the root directory for a TA (ie `~/repo_root/TAs/ta_root/lib/../../../../external/my_lib` => `~/repo_root/external/my_lib`). When building, the library files will be placed outside the expected build folder (ie `~/misc_dir/build_folder/out/lib/../../../../external` => `~/external/my_lib`).
+This folder contains shared libraries used by the TAs. The OP-TEE build system does not work well with relative paths which go below the root directory for a TA (i.e. `~/repo_root/TAs/ta_root/lib/../../../../external/my_lib` => `~/repo_root/external/my_lib`). When building, the library files will be placed outside the expected build folder (i.e. `~/misc_dir/build_folder/out/lib/../../../../external` => `~/external/my_lib`).
 
-Each TA may also need to utilize the library in a slightly different manner, so each TA needs a seperate `sub.mk` file. To achieve this each library's `sub.mk` is responsible for either copying the requried files locally, or setting up a symlink to the external folder.
+Each TA may also need to utilize the library in a slightly different manner, so each TA needs a separate `sub.mk` file. To achieve this each library's `sub.mk` is responsible for either copying the required files locally, or setting up a symlink to the external folder.
 
 ## Using the Libraries
 The following lines in the TA root `sub.mk` file make sure that the libraries are correctly setup before they are referenced.
@@ -36,7 +36,7 @@ endif
 ```
 ## Types of Libraries
 ### Symlinks
-The `lib/my_lib/sub.mk` file should automatically create the symlinks when needed. Currently all libraries are backed by submodules which are also automatically initialized and downloaded if they are not already pressent.
+The `lib/my_lib/sub.mk` file should automatically create the symlinks when needed. Currently all libraries are backed by submodules which are also automatically initialized and downloaded if they are not already present.
 ```makefile
 ./lib/my_lib/my_lib_symlink: remove_my_lib_symlink download_my_lib
     ...

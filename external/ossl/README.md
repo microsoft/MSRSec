@@ -92,7 +92,7 @@ static inline char *strcat(char *dest, const char *src)
 ```
 
 ### Implementing the Remapped Functions
-The remapped `sassl_*()` functions must be defined in the binary which the crypto library is to be linked with. In the case of the OP-TEE TAs `/ossl/optee_lib/optee_stdlib.c` implements the `sassl_*()` functions. If `optee_stdlib.c` is included as part of the TA then `libcrypto.a` should link successuflly.
+The remapped `sassl_*()` functions must be defined in the binary which the crypto library is to be linked with. In the case of the OP-TEE TAs `/ossl/optee_lib/optee_stdlib.c` implements the `sassl_*()` functions. If `optee_stdlib.c` is included as part of the TA then `libcrypto.a` should link successfully.
 
 The implementations either directly map the calls to functions provided by OP-TEE, provide a basic implementation, or are stubbed out and generate an error. For example OP-TEE provides an implementation of `memcpy()` so it is sufficient to simply pass the call along. `strcasecmp()` is not currently implemented by OP-TEE so a basic implementation is provided here, and `closedir()` is not required for any of the TA code so it is stubbed out.
 ```C
@@ -131,7 +131,7 @@ int sassl_MyUnimplementedFunction(int MyArgument) {
     TEE_Panic(TEE_ERROR_NOT_IMPLEMENTED);
 }
 ```
-Unfortunately, there is no way to determine if the function is  required other than searching the OpenSSL codebase or comprehensive testing at runtime. In the above example an error message is printed to the serial port and the TA will panic if the function is called.
+Unfortunately, there is no way to determine if the function is required other than searching the OpenSSL codebase or comprehensive testing at runtime. In the above example an error message is printed to the serial port and the TA will panic if the function is called.
 
 ### OpenSSL Random Number Generation
 OpenSSL uses a pseudo random number generation system called the Deterministic Random Bit Generator (DRBG). The DRBG is initialized once with a random seed and a nonce, then additional entropy is added as needed. The nonce is usually comprised of information provided by the OS which is not applicable here. Instead the `RAND_DRBG_GET_RANDOM_NONCE` flag is passed when OpenSSL is built which instead uses additional pure entropy to seed the generator.

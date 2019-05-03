@@ -12,11 +12,11 @@ The AuthVars TA relies on external crypto libraries for PKCS7 signing using eith
 
 ### Volatile and Non-Volatile Storage
 
-The TA will store up to 64KB each of volatile and non-volatile variables (for a total of 128KB). This may be increased by changing `MAX_NV_STORAGE` or `MAX_VOLATILE_STROAGE`. The maxium heap size the TA will be allocated is controlled by `DATA_SIZE`, currently set to 2x the expected worst case and may need to be increased.
+The TA will store up to 64KB each of volatile and non-volatile variables (for a total of 128KB). This may be increased by changing `MAX_NV_STORAGE` or `MAX_VOLATILE_STROAGE`. The maximum heap size the TA will be allocated is controlled by `DATA_SIZE`, currently set to 2x the expected worst case and may need to be increased.
 
-The AuthVars TA's memory is backed by the OP-TEE file system. See [OP-TEE's documentation](https://optee.readthedocs.io/architecture/secure_storage.html) for details. Each variable is stored as a seperate OP-TEE storage object.
+The AuthVars TA's memory is backed by the OP-TEE file system. See [OP-TEE's documentation](https://optee.readthedocs.io/architecture/secure_storage.html) for details. Each variable is stored as a separate OP-TEE storage object.
 
-When the TA is first loaded it enumerates and loads all of its existing variables into memory. OP-TEE's filesystem guarantees atomicity of I/O operations, which is a requirement of the UEFI spec. The TA runs in single session mode so it only needs to access the underlying OP-TEE file system when updating or creating variables, otherwise it runs off the cached versions.
+When the TA is first loaded it enumerates and loads all its existing variables into memory. OP-TEE's filesystem guarantees atomicity of I/O operations, which is a requirement of the UEFI spec. The TA runs in single session mode, so it only needs to access the underlying OP-TEE file system when updating or creating variables, otherwise it runs off the cached versions.
 
 The storage is currently encrypted by OP-TEE using a TA Storage Key (TSK) encryption key which is based on the device's unique hardware ID and the TPM's UUID.
 
@@ -34,8 +34,8 @@ During development of OP-TEE, if the key derivation functions change, the non-vo
 
 Increase the debugging level using `CFG_TEE_TA_LOG_LEVEL=4` when compiling the TA. Additional development only debug information can be enabled by using `CFG_TA_DEBUG=y`. Turning this on will print information about each transaction which occurs. This option will significantly degrade performance.
 
-### External Code Debuging
+### External Code Debugging
 
 *WolfSSL* sources are compiled directly, so adding `#include <trace.h>` is sufficient to gain access to the full set of OP-TEE tracing functions (`DMSG(), etc`).
 
-Since *OpenSSL* is compiled seperately and then linked this will not work. The stdlib shim layer implements `sassl_print( char *c )`, a basic print command which can be added to the OpenSSL codebase if needed.
+Since *OpenSSL* is compiled separately and then linked this will not work. The stdlib shim layer implements `sassl_print( char *c )`, a basic print command which can be added to the OpenSSL codebase if needed.

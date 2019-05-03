@@ -2,9 +2,9 @@ Microsoft Research Security TAs
 ===========
 ## Trusted firmware for 32-bit and 64-bit ARM SoC's
 
-This repository contains [OP-TEE](https://github.com/OP-TEE/optee_os) Trusted Applications (TAs) which implement a firware Trusted Platform Module (TPM), and a UEFI authenticated variable store.
+This repository contains [OP-TEE](https://github.com/OP-TEE/optee_os) Trusted Applications (TAs) which implement a firmware Trusted Platform Module (TPM), and a UEFI authenticated variable store.
 
-While these TAs were developed for use with Widnows IoT Core running on NXP i.MX procesors (see the [build-firmware document](https://github.com/ms-iot/imx-iotcore/blob/public_preview/Documentation/build-firmware.md) for additional information), the TAs are not limited to that platform and all instructions in this document are stand-alone.
+While these TAs were developed for use with Windows IoT Core running on NXP i.MX processors (see the [build-firmware document](https://github.com/ms-iot/imx-iotcore/blob/public_preview/Documentation/build-firmware.md) for additional information), the TAs are not limited to that platform and all instructions in this document are stand-alone.
 
 ## Further Reading
 
@@ -16,7 +16,7 @@ See [IoT Core build-firmware.md](https://github.com/ms-iot/imx-iotcore/blob/publ
 
 # Crypto Options
 
-Each TA is able to link against either OpenSSL or WolfSSL crypto libraries. 
+Each TA can link against either OpenSSL or WolfSSL crypto libraries. 
 
 ## Stand Alone OpenSSL
 
@@ -33,7 +33,7 @@ Please be aware of licensing considerations when using WolfSSL. To enable WolfSS
 The secure firmware utilizes the OP-TEE implementation of the Global Platform specifications. The OP-TEE project is
 not duplicated in this repository but is obtained directly from the public release (however some features of the fTPM will only work with the Microsoft [fork of OP-TEE](https://github.com/ms-iot/optee_os)).
 
-OP-TEE builds nativly on Linux, however the following installation steps allow OP-TEE to be built under Windows using the Windows Subsystem for Linux (WSL). Only the optee_os repository is relevant for building the trusted firmware - the optee_client & optee_linuxdriver repositories are integration components for Linux and can serve as a reference for the Windows equivalent components. Note that optee_linuxdriver is GPL.
+OP-TEE builds natively on Linux, however the following installation steps allow OP-TEE to be built under Windows using the Windows Subsystem for Linux (WSL). Only the optee_os repository is relevant for building the trusted firmware - the optee_client & optee_linuxdriver repositories are integration components for Linux and can serve as a reference for the Windows equivalent components. Note that optee_linuxdriver is GPL.
 
 OP-TEE generates a build environment for trusted applications which is based on Make (See TA_DEV_KIT_DIR in the build directions).
 This build environment places several constraints on how the code is organized, which are explained in the relevant makefiles, and in the [external library README.md](external/README.md). See the [optee_os documentation](https://optee.readthedocs.io/building/index.html) for details about how OP-TEE build works.
