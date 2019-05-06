@@ -43,26 +43,32 @@
 #include <tee_internal_api.h>
 #include <tee_internal_api_extensions.h>
 
-#define TEE_EPS_SIZE      (256/2)   // From TPM2B_RSA_TEST_PRIME in Hierarchy.c
+//
+// To allow for future proofing the OP-TEE property will generate a SHA512
+// hash, although the current source of data is only 32 bytes, and the TPM
+// currently only requests 32 bytes for the endorsement seed.
+//
+#define TEE_EPS_SIZE      SHA512_DIGEST_SIZE
 
 void
 _plat__GetEPS(size_t Size, uint8_t *EndorsementSeed)
 {
     TEE_Result Result = TEE_ERROR_ITEM_NOT_FOUND;
     uint8_t EPS[TEE_EPS_SIZE] = { 0 };
-    size_t EPSLen;
+    size_t EPSLen = sizeof(EPS);
     size_t RandBytesGathered = 0;
     uint32_t RandReturn;
 
     DMSG("EPS Size=%d", Size);
     DMSG("EPS property size=%d",TEE_EPS_SIZE);
 
-    Result = TEE_GetPropertyAsBinaryBlock(TEE_PROPSET_CURRENT_TA,
+    Result = TEE_GetPropertyAsBinaryBlock(TEE_PROPSET_TEE_IMPLEMENTATION,
                                           "com.microsoft.ta.endorsementSeed",
                                           EPS,
                                           &EPSLen);
 
     if ((Result == TEE_SUCCESS) && (EPSLen >= Size)) {
+        IMSG("fTPM retrieved hardware based EPS.");
         memcpy(EndorsementSeed, EPS, Size);
     } else {
         // We failed to access the property. We can't continue without it
