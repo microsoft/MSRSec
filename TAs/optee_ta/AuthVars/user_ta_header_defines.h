@@ -44,7 +44,14 @@
 
 #define TA_FLAGS                    (TA_FLAG_SINGLE_INSTANCE | TA_FLAG_INSTANCE_KEEP_ALIVE | TA_FLAG_MULTI_SESSION)
 #define TA_STACK_SIZE               (64 * 1024)
-#define TA_DATA_SIZE                (256 * 1024) // = 256k (double worst case)
+/*
+ * Worst case memory requirements:
+ * Volatile + Non-Volatile storage  = 64k + 64k 
+ * Max optee buffer size            = 16k
+ * Max Cert store size              = 16k * 2
+ *                                  = 176k
+*/
+#define TA_DATA_SIZE                (192 * 1024) // ( worst case + 16k saftey margin)
 
 #define TA_CURRENT_TA_EXT_PROPERTIES \
     { "gp.ta.description", USER_TA_PROP_TYPE_STRING, \
