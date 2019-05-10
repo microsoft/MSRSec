@@ -8,6 +8,11 @@ TPM_ROOT := $(SUBMODULE_ROOT)/ms-tpm-20-ref/TPMCmd
 
 include $(TA_DEV_KIT_DIR)/mk/ta_dev_kit.mk
 
+ifeq ($(CFG_ARM64_ta_arm64),y)
+# include libgcc.a for __udivti3
+ldargs-$(binary).elf += $(libgcc$(sm))
+endif
+
 CPPFLAGS +=  -fshort-wchar
 
 clean: clean_stripped_file

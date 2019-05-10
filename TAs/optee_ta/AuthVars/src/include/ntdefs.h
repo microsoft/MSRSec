@@ -35,6 +35,12 @@
 #include <wchar.h>
 #include <stdint.h>
 
+#ifdef _MSC_VER
+#define STATIC_ASSERT(cond) static_assert((cond), #cond)
+#else
+#define STATIC_ASSERT(cond) _Static_assert((cond), #cond)
+#endif
+
 #ifndef CONST
 #define CONST   const
 #endif
@@ -78,9 +84,9 @@ typedef int                 INT;
 typedef signed int          INT32;
 typedef unsigned int        UINT;
 typedef unsigned int        UINT32;
-typedef long                LONG;
-typedef unsigned long       ULONG;
-typedef unsigned long       DWORD;
+typedef int32_t             LONG;
+typedef uint32_t            ULONG;
+typedef uint32_t            DWORD;
 typedef long long           LONGLONG;
 typedef unsigned long long  ULONGLONG;
 typedef unsigned long long  DWORDLONG;
@@ -109,6 +115,31 @@ typedef UINT32      *PUINT32;
 typedef UINT64      *PUINT64;
 typedef SIZE_T      *PSIZE_T;
 
+STATIC_ASSERT(sizeof(BYTE) == 1);
+STATIC_ASSERT(sizeof(CHAR) == 1);
+STATIC_ASSERT(sizeof(INT8) == 1);
+STATIC_ASSERT(sizeof(UCHAR) == 1);
+STATIC_ASSERT(sizeof(UINT8) == 1);
+
+STATIC_ASSERT(sizeof(INT16) == 2);
+STATIC_ASSERT(sizeof(SHORT) == 2);
+STATIC_ASSERT(sizeof(UINT16) == 2);
+STATIC_ASSERT(sizeof(USHORT) == 2);
+STATIC_ASSERT(sizeof(WORD) == 2);
+
+STATIC_ASSERT(sizeof(DWORD) == 4);
+STATIC_ASSERT(sizeof(INT) == 4);
+STATIC_ASSERT(sizeof(INT32) == 4);
+STATIC_ASSERT(sizeof(LONG) == 4);
+STATIC_ASSERT(sizeof(UINT) == 4);
+STATIC_ASSERT(sizeof(UINT32) == 4);
+STATIC_ASSERT(sizeof(ULONG) == 4);
+
+STATIC_ASSERT(sizeof(INT64) == 8);
+STATIC_ASSERT(sizeof(LONGLONG) == 8);
+STATIC_ASSERT(sizeof(UINT64) == 8);
+STATIC_ASSERT(sizeof(ULONGLONG) == 8);
+
  //
  // UNICODE (Wide Character) types
  //
@@ -116,8 +147,8 @@ typedef SIZE_T      *PSIZE_T;
  // For compatibility with Windows convention we still use 16-bit.
  //
 
-// Call this somewhere in code, the compiler will throw an error if wchar_t is the wrong size.
-#define WCHAR_SIZE_CHECK (void)sizeof(uint8_t[(int32_t)(sizeof(uint16_t) - sizeof(wchar_t))])
+// The compiler will throw an error if wchar_t is the wrong size.
+STATIC_ASSERT(sizeof(uint16_t) == sizeof(wchar_t));
 typedef wchar_t WCHAR;
 
 typedef WCHAR *PWCHAR, *LPWCH, *PWCH;
@@ -201,10 +232,10 @@ typedef LARGE_INTEGER PHYSICAL_ADDRESS, *PPHYSICAL_ADDRESS;
 // GUID
 //
 typedef struct _GUID {
-    unsigned long  Data1;
-    unsigned short Data2;
-    unsigned short Data3;
-    unsigned char  Data4[8];
+    UINT32 Data1;
+    UINT16 Data2;
+    UINT16 Data3;
+    UINT8  Data4[8];
 } GUID;
 
 extern const GUID GUID_NULL;
@@ -256,7 +287,6 @@ wcscmp(
 )
 {
     int ret = 0;
-    WCHAR_SIZE_CHECK;
 
     while ((ret = (int)(*src - *dst)) == 0 && *dst)
         ++src, ++dst;

@@ -31,6 +31,7 @@ CPPFLAGS += -DTHIRTY_TWO_BIT -DCFG_TEE_TA_LOG_LEVEL=$(CFG_TEE_TA_LOG_LEVEL) -D_A
 ifeq ($(CFG_ARM64_ta_arm64),y)
 CPPFLAGS += -mstrict-align
 CPPFLAGS += -DfTPMARM64=1
+CPPFLAGS += -D_M_ARM64
 else
 CPPFLAGS += -mno-unaligned-access
 CPPFLAGS += -DfTPMARM32=1

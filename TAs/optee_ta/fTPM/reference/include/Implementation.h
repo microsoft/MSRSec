@@ -141,6 +141,9 @@
 #define HASH_ALIGNMENT                  4
 #define SYMMETRIC_ALIGNMENT             4
 #ifdef USE_WOLFCRYPT
+#if RADIX_BITS == 64
+#define FP_64BIT
+#endif
 #define HASH_LIB                        WOLF
 #define SYM_LIB                         WOLF
 #define MATH_LIB                        WOLF
