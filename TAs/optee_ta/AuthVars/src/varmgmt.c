@@ -128,6 +128,18 @@ IsSecureBootVar(
     PCGUID  VendorGuid              // IN
 );
 
+static
+TEE_Result
+NvOpenVariable(
+    AUTHVAR_META *VarMeta
+);
+
+static
+VOID
+NvCloseVariable(
+    AUTHVAR_META *VarMeta
+);
+
 #ifdef AUTHVAR_DEBUG
 static
 VOID
@@ -219,18 +231,28 @@ AuthVarInitStorage(
             goto Cleanup;
         }
 
-        // Open object
-        status = TEE_OpenPersistentObject(TEE_STORAGE_PRIVATE,
-                                          &(VarList[i].ObjectID),
-                                          sizeof(VarList[i].ObjectID),
-                                          TA_STORAGE_FLAGS,
-                                          &(VarList[i].ObjectHandle));
+        if(s_NonVolatileSize + objInfo.dataSize > MAX_NV_STORAGE)
+        {
+            status = TEE_ERROR_OUT_OF_MEMORY;
+            EMSG("Failed AuthVarInit: Exceeds non-volatile variable max allocation.");
+            goto Cleanup;
+        }
+
+        s_NonVolatileSize += objInfo.dataSize;
+
+        if (NvOpenVariable(&VarList[i]) != TEE_SUCCESS) {
+            EMSG("Failed to open NV handle");
+            TEE_Panic(status);
+        }
 
         // Read object
         status = TEE_ReadObjectData(VarList[i].ObjectHandle,
                                     (PVOID)pVar,
                                     objInfo.dataSize,
                                     &size);
+
+        NvCloseVariable(&VarList[i]);
+
         // Sanity check size
         if (objInfo.dataSize != size)
         {
@@ -308,6 +330,59 @@ AuthVarCloseStorage(
 {
     // TODO: This
     return TEE_SUCCESS;
+}
+
+TEE_Result
+NvOpenVariable(
+    AUTHVAR_META *VarMeta
+)
+/*++
+
+    Routine Description:
+
+        Open a handle for updating a non-volatile variable
+
+    Arguments:
+
+        Address of the variable meta data
+
+    Returns:
+
+        TEE_Result
+
+--*/
+{
+    // Open object
+    FMSG("Opening NV handle");
+    return TEE_OpenPersistentObject(TEE_STORAGE_PRIVATE,
+                                        &(VarMeta->ObjectID),
+                                        sizeof(VarMeta->ObjectID),
+                                        TA_STORAGE_FLAGS,
+                                        &(VarMeta->ObjectHandle));
+}
+
+VOID
+NvCloseVariable(
+    AUTHVAR_META *VarMeta
+)
+/*++
+
+    Routine Description:
+
+        Close a handle after updating a non-volatile variable
+
+    Arguments:
+
+        Address of the variable meta data
+
+    Returns:
+
+        None
+
+--*/
+{
+    FMSG("Closing NV handle");
+    TEE_CloseObject(VarMeta->ObjectHandle);
 }
 
 //
@@ -535,6 +610,13 @@ CreateVariable(
         // Total NV requirement to store this var
         requiredSize = sizeof(UEFI_VARIABLE) + strLen + DataSize + extAttribLen;
 
+        if(s_NonVolatileSize + requiredSize > MAX_NV_STORAGE)
+        {
+            status = TEE_ERROR_OUT_OF_MEMORY;
+            EMSG("Create non-volatile variable error: Exceeds non-volatile variable max allocation.");
+            goto Cleanup;
+        }
+
         FMSG("Storing 0x%x bytes (variable + name + data)", requiredSize);
 
         // In-memory allocation for new variable
@@ -592,6 +674,9 @@ CreateVariable(
             TEE_Free(newVar);
             goto Cleanup;
         }
+
+        // Track current non-volatile memory usage
+        s_NonVolatileSize += requiredSize;
 
         // Update the in-memory list
         InsertTailList(&VarInfo[varType].Head, &newVar->List);
@@ -729,9 +814,11 @@ DeleteVariable(
         {
             goto Cleanup;
         }
-
-        // No MAX here to detect underflow (has no functional impact anyway)
         s_NonVolatileSize -= varSize;
+        if (s_NonVolatileSize > MAX_NV_STORAGE) {
+            EMSG("Non-volatile variable size underflow!");
+            TEE_Panic(TEE_ERROR_BAD_STATE);
+        }
     }
 Cleanup:
 #ifdef AUTHVAR_DEBUG
@@ -848,6 +935,14 @@ AppendVariable(
         // Calculate new variable size
         newSize = varSize + DataSize;
 
+        // Check if there is enough volatile memory "quota"
+        if((s_NonVolatileSize + DataSize) > MAX_NV_STORAGE)
+        {
+            EMSG("Non-volatile append error: Exceeds non-volatile variable max allocation.");
+            status = TEE_ERROR_OUT_OF_MEMORY;
+            goto Cleanup;
+        }
+
         // Attempt to realloc variable buffer
         // Remove from the list incase the variable is moved.
         RemoveEntryList(&Var->List);
@@ -881,6 +976,9 @@ AppendVariable(
         {
             goto Cleanup;
         }
+
+        // Track current usage
+        s_NonVolatileSize += DataSize;
 
         // Success
         status = TEE_SUCCESS;
@@ -956,18 +1054,14 @@ ReplaceVariable(
             goto Cleanup;
         }
 
-        // Calculate change in length
+        // Calculate change in length (Can be negative if the variable is shrinking)
         length = DataSize - Var->DataSize;
 
-        // Variable increasing in size?
-        if (DataSize > Var->DataSize)
+        // Make sure it will fit
+        if ((s_VolatileSize + length) > MAX_VOLATILE_STORAGE)
         {
-            // Make sure it will fit
-            if ((s_VolatileSize + length) > MAX_VOLATILE_STORAGE)
-            {
-                status = TEE_ERROR_OUT_OF_MEMORY;
-                goto Cleanup;
-            }
+            status = TEE_ERROR_OUT_OF_MEMORY;
+            goto Cleanup;
         }
 
         // Realloc variable data
@@ -1013,6 +1107,16 @@ ReplaceVariable(
         // Calculate total size needed to store this variable
         reqSize = sizeof(UEFI_VARIABLE) + Var->NameSize + Var->ExtAttribSize + DataSize;
 
+        // Calculate change in length (Can be negative if the variable is shrinking)
+        length = DataSize - Var->DataSize;
+
+        // Make sure it will fit
+        if ((s_NonVolatileSize + length) > MAX_NV_STORAGE)
+        {
+            status = TEE_ERROR_OUT_OF_MEMORY;
+            goto Cleanup;
+        }
+
         // realloc variable
         // Remove from the list incase the variable is moved.
         RemoveEntryList(&Var->List);
@@ -1047,6 +1151,9 @@ ReplaceVariable(
         {
             goto Cleanup;
         }
+
+        // Update volatile quota (note length may be negative)
+        s_NonVolatileSize += length;
 
         // Success
         status = TEE_SUCCESS;
@@ -1091,9 +1198,10 @@ QueryByAttribute(
     VARTYPE varType;
     PUEFI_VARIABLE pVar;
     UINT64 MaxSize = 0;
-    UINT64 TotalSize = 0;
+    UINT64 TotalNVSize = 0;
     UINT32 VarSize = 0;
     PLIST_ENTRY head, cur;
+    UINT32 i = 0;
 
     // Note that since we are not provided a (name,guid) for a query, we
     // cannot provide information on secureboot variable storage.
@@ -1131,9 +1239,6 @@ QueryByAttribute(
         // Track sizes
         MaxSize = MAX(MaxSize, VarSize);
 
-        // We count name length in total
-        TotalSize += VarSize + pVar->NameSize;
-        
         // Goto next entry
         cur = cur->Flink;
     }
@@ -1141,9 +1246,12 @@ QueryByAttribute(
     // Fill in output values (max storage first)
     if (MaxVarStorage)
     {
-        // No need to differentiate between types for max var storage
-        *MaxVarStorage = NV_AUTHVAR_SIZE;
-        FMSG("Max storage is 0x%x", (UINT32)MaxVarStorage);
+        if(varType == VTYPE_VOLATILE) {
+            *MaxVarStorage = MAX_VOLATILE_STORAGE;
+        } else {
+            *MaxVarStorage = MAX_NV_STORAGE;
+        }
+        FMSG("Max storage is 0x%x", (UINT32)*MaxVarStorage);
     }
 
     // Remaining storage by type (volatile/non-volatile)
@@ -1154,12 +1262,14 @@ QueryByAttribute(
             *RemainingVarStorage = (MAX_VOLATILE_STORAGE - s_VolatileSize);
             FMSG("Remaining volatile storage is 0x%x - 0x%x = 0x%x",
                     (UINT32)MAX_VOLATILE_STORAGE,
-                    (UINT32)TotalSize,
+                    (UINT32)s_VolatileSize,
                     (UINT32)*RemainingVarStorage);
         } else {
-            // This is a lie. We don't really have a better answer though.
-            *RemainingVarStorage = ((NV_AUTHVAR_SIZE - s_VolatileSize) - s_NonVolatileSize);
-            FMSG("Remaining NV storage is 0x%x", (UINT32)RemainingVarStorage);
+            *RemainingVarStorage = MAX_NV_STORAGE - s_NonVolatileSize;
+            FMSG("Remaining non-volatile storage is 0x%x - 0x%x = 0x%x",
+                    (UINT32)MAX_NV_STORAGE,
+                    (UINT32)s_NonVolatileSize,
+                    (UINT32)*RemainingVarStorage);
         }
     }
 
@@ -1302,6 +1412,8 @@ NvCreateVariable(
     // Update next free index
     AuthVarNextFreeIdx(&NextFreeIdx);
 
+    NvCloseVariable(&VarList[i]);
+
     // Success, return
     status = TEE_SUCCESS;
 
@@ -1340,6 +1452,11 @@ NvUpdateVariable(
     // Calculate new size of persistent object
     newSize = sizeof(UEFI_VARIABLE) + Var->NameSize + Var->ExtAttribSize + Var->DataSize;
 
+    if (NvOpenVariable(&VarList[i]) != TEE_SUCCESS) {
+        EMSG("Failed to open NV handle");
+        TEE_Panic(status);
+    }
+
     // Reset data position for object
     status = TEE_SeekObjectData(VarList[i].ObjectHandle, 0, TEE_DATA_SEEK_SET);
     if (status != TEE_SUCCESS)
@@ -1360,6 +1477,8 @@ NvUpdateVariable(
     {
         goto Cleanup;
     }
+
+    NvCloseVariable(&VarList[i]);
 
     // Success, return
     status = TEE_SUCCESS;
@@ -1392,6 +1511,11 @@ NvDeleteVariable(
         TEE_Panic(TEE_ERROR_BAD_STATE);
     }
 
+    if (NvOpenVariable(&VarList[i]) != TEE_SUCCESS) {
+        EMSG("Failed to open NV handle");
+        TEE_Panic(status);
+    }
+
     // Close and delete backing object
     status = TEE_CloseAndDeletePersistentObject1(VarList[i].ObjectHandle);
     if (status != TEE_SUCCESS)
@@ -1401,6 +1525,8 @@ NvDeleteVariable(
 
     // Free in-memory variable
     TEE_Free(VarList[i].Var);
+    VarList[i].Var = NULL;
+    VarList[i].ObjectID = 0;
 
     // If necessary, update next free
     if (i < NextFreeIdx)
@@ -1629,8 +1755,8 @@ AuthVarDumpVarList(
     CHAR convertedNameBuf[maxNameLength];
 
     FMSG("================================");
-    FMSG("\tVolatile:");
     FMSG("                              | Address | Alloc( Data Size ) | State ");
+    FMSG("\tVolatile (0x%x bytes):", s_VolatileSize);
     
     head = &VarInfo[VTYPE_VOLATILE].Head;
     cur = head->Flink;
@@ -1650,7 +1776,7 @@ AuthVarDumpVarList(
     }
 
     FMSG("================================");
-    FMSG("\tNon Volatile:");
+    FMSG("\tNon Volatile (0x%x bytes):", s_NonVolatileSize);
 
     for (i = 0; i < MAX_AUTHVAR_ENTRIES; i++)
     {
@@ -1670,7 +1796,6 @@ AuthVarDumpVarList(
         else {
             varType = "    ";
         }
-
         FMSG("%-30s|%#9lx| A:%#6x(D:%#6x) | %s |",
             varName, (UINT_PTR)pVar, varSize, pVar->DataSize, varType);
     }
