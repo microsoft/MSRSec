@@ -6,7 +6,7 @@ INCLUDES = -I$(PREFIX)/include
 LDFLAGS += -L$(PREFIX)/lib
 LDFLAGS += -Wl,-whole-archive
 LDFLAGS += -nodefaultlibs
-TA_CROSS_COMPILE ?= /home/damcilva/gcc-linaro-6.4.1-2017.11-x86_64_arm-linux-gnueabihf/bin/arm-linux-gnueabihf-
+TA_CROSS_COMPILE ?= ~/gcc-linaro-6.4.1-2017.11-x86_64_arm-linux-gnueabihf/bin/arm-linux-gnueabihf-
 
 CC= $(TA_CROSS_COMPILE)gcc
 CC+=-I$(CURDIR)/include
