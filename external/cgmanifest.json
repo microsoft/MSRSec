@@ -1,0 +1,41 @@
+{
+    "Registrations": [
+        {
+            "component": {
+                "type": "git",
+                "git": {
+                    "repositoryUrl": "https://github.com/ms-iot/optee_os",
+                    "commitHash": "bc454ea594eefeed0ffb4baa1fdc09f47cdc1704"
+                }
+            }
+        },
+        {
+            "component": {
+                "type": "git",
+                "git": {
+                    "repositoryUrl": "https://github.com/Microsoft/ms-tpm-20-ref.git",
+                    "commitHash": "6cb570e90317c7927a0c6da86a27777376a9a433"
+                }
+            }
+        },
+        {
+            "component": {
+                "type": "git",
+                "git": {
+                    "repositoryUrl": "https://github.com/openssl/openssl.git",
+                    "commitHash": "3d753b0cefaa7e3d4b5d12d7805b20fabff1f385"
+                }
+            }
+        },
+        {
+            "component": {
+                "type": "git",
+                "git": {
+                    "repositoryUrl": "https://github.com/wolfSSL/wolfssl.git",
+                    "commitHash": "74ebf510a3d73e98767eac26082eabdc84e19d31"
+                }
+            }
+        }
+    ],
+    "Version": 1
+}
