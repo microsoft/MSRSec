@@ -1528,6 +1528,9 @@ NvDeleteVariable(
     VarList[i].Var = NULL;
     VarList[i].ObjectID = 0;
 
+    // Clear metadata
+    memset(&(VarList[i]), 0, sizeof(AUTHVAR_META));
+
     // If necessary, update next free
     if (i < NextFreeIdx)
     {
@@ -1726,7 +1729,7 @@ ConvertWCharToChar(
 )
 {
     CHAR *returnPtr = Ascii;
-    while (Unicode != L'\0' && AsciiBufferLength > 1) {
+    while (*Unicode != L'\0' && AsciiBufferLength > 1) {
         if (*Unicode <= 0x7F) {
             *Ascii = (CHAR)*Unicode;
         }
