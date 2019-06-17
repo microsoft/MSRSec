@@ -57,6 +57,7 @@ global-incdirs-y += src/include
 srcs-y += src/varops.c
 srcs-y += src/varauth.c
 srcs-y += src/varmgmt.c
+srcs-y += src/nvmem.c
 
 ifeq ($(CFG_AUTHVARS_USE_WOLF),y)
 #

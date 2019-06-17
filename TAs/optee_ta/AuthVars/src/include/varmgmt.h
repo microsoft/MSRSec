@@ -33,49 +33,7 @@
 
 #pragma once
 #include <varops.h>
-
- // For cleaner descriptor validation
-#define IS_VALID(a)         ((a) != (TEE_HANDLE_NULL))
-
- // Storage flags
-#define TA_STORAGE_FLAGS    (TEE_DATA_FLAG_ACCESS_READ  | \
-                             TEE_DATA_FLAG_ACCESS_WRITE | \
-                             TEE_DATA_FLAG_ACCESS_WRITE_META)
-
- // Maximum number of variables we'll track
-#define MAX_AUTHVAR_ENTRIES     (256)
-
-// (MAX_NV_STORAGE + MAX_VOLATILE_STORAGE) MUST NOT EXCEED TA_DATA_SIZE (user_ta_header_defines.h)
-// Maximum possible storage for non-volatile vars
-#define MAX_NV_STORAGE         (64 * 1024) // = 64k
-
-// Maximum possible storage for volatile vars
-#define MAX_VOLATILE_STORAGE    (64 * 1024)   // = 64k
-
-// (guid,name) digest quadword count
-#define TEE_DIGEST_QWORDS      ((TEE_SHA256_HASH_SIZE) / sizeof(UINT64))
-
-// Update if architected objectID length changes!
-#if TEE_OBJECT_ID_MAX_LEN > 64
-#error "Unexpected TEE_OBJECT_ID_MAX_LEN!"
-#else
-typedef struct _AUTHVAR_META
-{
-    UINT64              ObjectID;       // Storage object identifier
-    TEE_ObjectHandle    ObjectHandle;   // Handle to open storage object
-    PUEFI_VARIABLE      Var;            // In-memory variable
-} AUTHVAR_META, *PAUTHVAR_META;
-#endif 
-
-TEE_Result
-AuthVarInitStorage(
-    VOID
-);
-
-TEE_Result
-AuthVarCloseStorage(
-    VOID
-);
+#include <nvmem.h>
 
 VOID
 SearchList(
@@ -132,6 +90,14 @@ QueryByAttribute(
     PUINT64     MaxVarStorage,          // OUT
     PUINT64     RemainingVarStorage,    // OUT
     PUINT64     MaxVarSize              // OUT
+);
+
+BOOLEAN
+GetVariableType(
+    PCWSTR      VarName,            // IN
+    PCGUID      VendorGuid,         // IN
+    ATTRIBUTES  Attributes,         // IN
+    PVARTYPE    VarType             // OUT
 );
 
 #ifdef AUTHVAR_DEBUG
