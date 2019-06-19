@@ -39,6 +39,17 @@
 #include <varops.h>
 #include <varmgmt.h>
 
+#define AUTHVARS_MAGIC              0x980A85
+#define AUTHVARS_NV_MAJOR_VERSION   1
+#define AUTHVARS_NV_MINOR_VERSION   2
+
+typedef struct _AUTHVAR_VERSIONING
+{
+    UINT32              Magic;
+    UINT32              MajorVersion;
+    UINT32              MinorVersion;
+} AUTHVAR_VERSIONING, *PAUTHVAR_VERSIONING;
+
  // For cleaner descriptor validation
 #define IS_VALID(a)         ((a) != (TEE_HANDLE_NULL))
 

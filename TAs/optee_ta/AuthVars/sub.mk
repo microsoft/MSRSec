@@ -30,6 +30,17 @@ else
 CPPFLAGS += -mno-unaligned-access
 endif
 
+#
+# Configure memory upgrade/recovery options
+#
+ifeq ($(CFG_TA_WIPE_ON_ERROR),y)
+$(info wipe on)
+CPPFLAGS += -DAUTHVARS_WIPE_MEMORY_ON_CORRUPTION
+endif
+ifeq ($(CFG_TA_ENABLE_UPGRADE),y)
+CPPFLAGS += -DAUTHVARS_UPGRADE_MEMORY
+endif
+
 ifeq ($(CFG_TA_DEBUG),y)
 CPPFLAGS += -DDBG=1
 CPPFLAGS += -O0
