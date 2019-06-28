@@ -124,7 +124,7 @@ TEE_Result TA_CreateEntryPoint(void)
     if (fTPMInitialized) {
         // We may have had TA_DestroyEntryPoint called but we didn't 
         // actually get torn down. Re-NVEnable, just in case.
-        if (_plat__NVEnable(NULL) == 0) {
+        if (_plat__NVEnable(NULL) != 0) {
             TEE_Panic(TEE_ERROR_BAD_STATE);
         }
         return TEE_SUCCESS;
@@ -134,7 +134,7 @@ TEE_Result TA_CreateEntryPoint(void)
     _admin__NvInitState();
 
     // If we fail to open fTPM storage we cannot continue.
-    if (_plat__NVEnable(NULL) == 0) {
+    if (_plat__NVEnable(NULL) != 0) {
         TEE_Panic(TEE_ERROR_BAD_STATE);
     }
 
@@ -158,17 +158,12 @@ TEE_Result TA_CreateEntryPoint(void)
         respBuf = startupState;
         respLen = STARTUP_SIZE;
 
-        ExecuteCommand(STARTUP_SIZE, startupState, &respLen, &respBuf);
+        _plat__RunCommand(STARTUP_SIZE, startupState, &respLen, &respBuf);
         if (fTPMResponseCode(respLen, respBuf) == TPM_RC_SUCCESS) {
             goto Exit;
         }
 
-#ifdef fTPMDebug
         DMSG("Fall through to startup clear\n");
-#endif
-
-        //DMSG("Start self test");
-        //CryptSelfTest(1);
 
         goto Clear;
     }
@@ -179,7 +174,7 @@ Clear:
     respLen = STARTUP_SIZE;
 
     // Fall back to a Startup Clear
-    ExecuteCommand(STARTUP_SIZE, startupClear, &respLen, &respBuf);
+    _plat__RunCommand(STARTUP_SIZE, startupClear, &respLen, &respBuf);
 
 Exit:
     // Init is complete, indicate so in fTPM admin state.
@@ -189,7 +184,18 @@ Exit:
     // Initialization complete
     fTPMInitialized = true;
 
-    return TEE_SUCCESS;
+#ifdef fTPMDebug
+    DMSG("Start forced self test");
+    CryptSelfTest(1);
+#endif
+
+    if (g_inFailureMode) {
+        EMSG("Startup failed");
+        return TEE_ERROR_BAD_STATE;
+    } else {
+        EMSG("Startup succeeded");
+        return TEE_SUCCESS;
+    }
 }
 
 
@@ -303,7 +309,7 @@ static TEE_Result fTPM_Submit_Command(uint32_t  param_types,
     // Check if this is a PPI Command
     if (!_admin__PPICommand(cmdLen, cmdBuf, &respLen, &respBuf)) {
         // If not, pass through to TPM
-        ExecuteCommand(cmdLen, cmdBuf, &respLen, &respBuf);
+        _plat__RunCommand(cmdLen, cmdBuf, &respLen, &respBuf);
     }
     // Unfortunately, this cannot be done until after we have our response in
     // hand. We will, however, make an effort to return at least a portion of
@@ -319,7 +325,12 @@ static TEE_Result fTPM_Submit_Command(uint32_t  param_types,
     DMSG("Success, RS: 0x%x\n", respLen);
 #endif
 
-    return TEE_SUCCESS;
+    if (g_inFailureMode) {
+        EMSG("fTPM in failure mode!");
+        return TEE_ERROR_BAD_STATE;
+    } else {
+        return TEE_SUCCESS;
+    }
 }
 
 //

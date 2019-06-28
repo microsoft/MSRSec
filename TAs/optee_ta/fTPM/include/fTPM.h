@@ -105,4 +105,6 @@ typedef union {
 } TPM_CHIP_STATE;
 
 extern TPM_CHIP_STATE g_chipFlags;
+extern bool g_inFailureMode;
+
 #endif /* FTPM_TA_H */

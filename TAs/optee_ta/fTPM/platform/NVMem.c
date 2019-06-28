@@ -95,7 +95,9 @@ for (int i = 0; i < NV_BLOCK_COUNT; i++) \
 //
 // NV state
 //
+// Contents of NV need to be cleared/initialized
 static BOOL  s_NVChipFileNeedsManufacture = FALSE;
+// NV objects have been successfully opened
 static BOOL  s_NVInitialized = FALSE;
 
 //
@@ -114,7 +116,6 @@ _plat__NvInitFromStorage()
 {
 	DMSG("_plat__NvInitFromStorage()");
 	UINT32 i;
-	BOOL initialized;
 	UINT32 objID;
 	UINT32 bytesRead;
 	TEE_Result Result;
@@ -126,13 +127,9 @@ _plat__NvInitFromStorage()
 
 	//
 	// If the NV file is successfully read from the storage then
-	// initialized must be set. We are setting initialized to true
-	// here but if an error is encountered reading the NV file it will
-	// be reset.
+	// s_NVInitialized must be set. We will set s_NVInitialized to true
+	// once reading the NV file has been completed without error.
 	//
-
-	initialized = TRUE;
-
 
 	// Collect storage objects and init NV.
 	for (i = 0; i < NV_BLOCK_COUNT; i++) {
@@ -182,9 +179,6 @@ _plat__NvInitFromStorage()
 			// To ensure NV is consistent, force a write back of all NV blocks
             NV_DIRTY_ALL(s_blockMap);
 
-			// Need to re-initialize
-			initialized = FALSE;
-
 			IMSG("Created fTPM storage object, i: 0x%x, s: 0x%x, id: 0x%x, h:0x%x\n",
 				i, NV_BLOCK_SIZE, objID, s_NVStore[i]);
 		}
@@ -233,18 +227,15 @@ _plat__NvInitFromStorage()
 
 		// Force (re)manufacture.
 		s_NVChipFileNeedsManufacture = TRUE;
-
-		// Need to re-initialize
-		initialized = FALSE;
-
-		return;
 	}
 
-	s_NVInitialized = initialized;
+	// The NV storage has been loaded, however may still require manufacturing
+	s_NVInitialized = TRUE;
 
 	return;
 
 Error:
+	EMSG("Aborting NvInit due to error");
 	s_NVInitialized = FALSE;
 	for (i = 0; i < NV_BLOCK_COUNT; i++) {
 		if (IS_VALID(s_NVStore[i])) {
@@ -388,7 +379,7 @@ _plat__NVEnable(
     _plat__NvInitFromStorage();
 
     // Were we successful?
-    if (!s_NVInitialized) {
+    if (s_NVChipFileNeedsManufacture == FALSE || s_NVInitialized == FALSE) {
         // Arriving here means one of two things: Either there existed no
         // NV state before we came along and we just (re)initialized our
         // storage. Or there is an error condition preventing us from 
@@ -401,10 +392,10 @@ _plat__NVEnable(
             // should we decide not to just TEE_Panic, we can continue
             // execution after (re)manufacture. Later an attempt at re-init
             // can be made by calling _plat__NvInitFromStorage again.
-            retVal = 0;
+            retVal = 1;
         }
         else {
-            retVal = 1;
+            retVal = 0;
         }
 
         // Going to manufacture, zero flags
@@ -412,9 +403,6 @@ _plat__NVEnable(
 
         // Save flags
         _admin__SaveChipFlags();
-
-        // Now we're done
-        s_NVInitialized = TRUE;
 
         return retVal;
     }
@@ -429,7 +417,7 @@ _plat__NVEnable(
         _admin__RestoreChipFlags();
 
 		// Success
-		retVal = 1;
+		retVal = 0;
     }
 
     return retVal;
