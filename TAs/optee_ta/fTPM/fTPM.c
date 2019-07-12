@@ -119,6 +119,8 @@ TEE_Result TA_CreateEntryPoint(void)
                                            0x00, 0x00, 0x01, 0x44, 0x00, 0x01 };
     uint32_t respLen;
     uint8_t *respBuf;
+    uint32_t result;
+    TEE_Result teeResult;
 
     // If we've been here before, don't init again.
     if (fTPMInitialized) {
@@ -134,8 +136,26 @@ TEE_Result TA_CreateEntryPoint(void)
     _admin__NvInitState();
 
     // If we fail to open fTPM storage we cannot continue.
-    if (_plat__NVEnable(NULL) != 0) {
-        TEE_Panic(TEE_ERROR_BAD_STATE);
+    DMSG("fTPM attempting to enable NV storage");
+    result = _plat__NVEnable(NULL);
+    if (result != 0) {
+        EMSG("fTPM failed to load NV storage");
+        if (result > 0) {
+            EMSG("Possibly a recoverable failure...");            // This is a possibly recoverable error, try to fix it and re-enable.
+            teeResult = _plat__NvRecoverStorage();
+            if (teeResult == TEE_ERROR_STORAGE_NOT_AVAILABLE || 
+                teeResult == TEE_SUCCESS)
+            {
+                EMSG("Possible storage recovery completed (0x%x)", teeResult);
+                result = _plat__NVEnable(NULL);
+            }
+        }
+
+        if (result != 0)
+        {
+            EMSG("fTPM unrecoverable failure when enabling NV storage (0x%x)", result);
+            TEE_Panic(TEE_ERROR_BAD_STATE);
+        }
     }
 
     // This only occurs when there is no previous NV state, i.e., on first
@@ -145,21 +165,24 @@ TEE_Result TA_CreateEntryPoint(void)
         TPM_Manufacture(1);
     }
 
+    DMSG("fTPM Power on");
     // "Power-On" the platform
     _plat__Signal_PowerOn();
 
+    DMSG("fTPM Init");
     // Internal init for reference implementation
     _TPM_Init();
 
     // Startup with state
     if (g_chipFlags.fields.TpmStatePresent) {
-
+        DMSG("fTPM Found existing state");
         // Re-use request buffer for response (ignored)
         respBuf = startupState;
         respLen = STARTUP_SIZE;
 
         _plat__RunCommand(STARTUP_SIZE, startupState, &respLen, &respBuf);
         if (fTPMResponseCode(respLen, respBuf) == TPM_RC_SUCCESS) {
+            DMSG("fTPM starup success");
             goto Exit;
         }
 

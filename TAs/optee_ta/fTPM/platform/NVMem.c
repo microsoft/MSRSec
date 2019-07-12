@@ -99,6 +99,8 @@ for (int i = 0; i < NV_BLOCK_COUNT; i++) \
 static BOOL  s_NVChipFileNeedsManufacture = FALSE;
 // NV objects have been successfully opened
 static BOOL  s_NVInitialized = FALSE;
+// Error state of the NV storage objects
+static TEE_Result s_NVStorageState = TEE_ERROR_STORAGE_NOT_AVAILABLE;
 
 //
 // Firmware revision
@@ -110,6 +112,151 @@ static const UINT32 firmwareV2 = FIRMWARE_V2;
 // Revision fro NVChip
 //
 static UINT64 s_chipRevision = 0;
+
+TEE_Result
+WipeMemory(
+	VOID
+)
+/*++
+
+	Routine Description:
+
+		Clears all persistent objects
+
+	Arguments:
+
+		None
+
+	Returns:
+
+		TEE_SUCCESS if the memory was successfully wiped.
+
+
+--*/
+{
+	TEE_Result              status;
+	TEE_ObjectInfo          objInfo;
+	TEE_ObjectHandle        objHandle;
+	TEE_ObjectEnumHandle    enumHandle = TEE_HANDLE_NULL;
+	UINT64                  objID;
+	UINT32                  objIDLen;
+
+	EMSG("Wiping Authvars memory!");
+	
+	status = TEE_AllocatePersistentObjectEnumerator(&enumHandle);
+	if (status != TEE_SUCCESS)
+	{
+		EMSG("Failed to create enumerator: 0x%x", status);
+		goto Cleanup;
+	}
+
+	do
+	{
+		// It is possible deleting objects will break the current enumerator, restart it each time.
+		DMSG("Starting enumerator");
+		status = TEE_StartPersistentObjectEnumerator(enumHandle, TEE_STORAGE_PRIVATE);
+		if (status == TEE_ERROR_ITEM_NOT_FOUND)
+		{
+			break;
+		}
+		if (status != TEE_SUCCESS)
+		{
+			EMSG("Authvars storage wipe failed 0x%x", status);
+			goto Cleanup;
+		}
+
+		status = TEE_GetNextPersistentObject(enumHandle,
+									&objInfo,
+									&objID,
+									&objIDLen);
+		if (status != TEE_SUCCESS)
+		{
+			EMSG("Authvars storage wipe failed to get next object");
+			goto Cleanup;
+		}
+
+		status =  TEE_OpenPersistentObject(TEE_STORAGE_PRIVATE,
+									&objID,
+									objIDLen,
+									TA_STORAGE_FLAGS,
+									&objHandle);
+
+		if (status != TEE_SUCCESS)
+		{
+			EMSG("Authvars storage wipe failed to open object for deletion");
+			goto Cleanup;
+		}
+
+		DMSG("Deleting object");
+		TEE_CloseAndDeletePersistentObject1(objHandle);
+		objHandle = TEE_HANDLE_NULL;
+
+		//TEE_ResetPersistentObjectEnumerator(enumHandle);
+
+	} while( status == TEE_SUCCESS );
+
+	if (status == TEE_ERROR_ITEM_NOT_FOUND)
+	{
+		// This is the expected result, once the enumerator is done.
+		status = TEE_SUCCESS;
+	}
+
+Cleanup:
+	if(IS_VALID(enumHandle))
+	{
+		TEE_FreePersistentObjectEnumerator(enumHandle);
+	}
+
+	if (status != TEE_SUCCESS)
+	{
+		EMSG("Failed to reset Authvars storage 0x%x", status);
+		return status;
+	}
+	
+	return status;
+}
+
+TEE_Result
+_plat__NvRecoverStorage(
+)
+/*++
+
+	Routine Description:
+
+		Decides which options should be attempted to recover memory.
+
+	Arguments:
+
+		None
+
+	Returns:
+
+		TEE_SUCCESS if recovery was performed successfully.
+		TEE_ERROR_STORAGE_NOT_AVAILABLE if storage has been deleted.
+		TEE_ERROR_BAD_STATE if recover was not succesfull.
+
+--*/
+{
+#ifdef FTPM_DEBUG
+	EMSG("Authvars has detected its storage is invalid, run OP-TEE with CFG_RPMB_FAT_RESET=y to clear.");
+#endif
+#ifdef FTPM_UPGRADE_MEMORY
+	if (s_NVStorageState = TEE_ERROR_NOT_SUPPORTED) {
+		EMSG("Version upgrade not supported");
+		TEE_Panic(TEE_ERROR_NOT_SUPPORTED);
+	}
+#else
+#endif
+#ifdef FTPM_WIPE_MEMORY_ON_CORRUPTION
+	if (WipeMemory() == TEE_SUCCESS)
+	{
+		EMSG("Returning 0x%x", TEE_ERROR_STORAGE_NOT_AVAILABLE);
+		return TEE_ERROR_STORAGE_NOT_AVAILABLE;
+	}
+#endif
+	EMSG("fTPM: Failed to recover storage.");
+	return TEE_ERROR_BAD_STATE;
+}
 
 VOID
 _plat__NvInitFromStorage()
@@ -151,7 +298,8 @@ _plat__NvInitFromStorage()
 
 			// There was an error, fail the init, NVEnable can retry.
 			if (Result != TEE_ERROR_ITEM_NOT_FOUND) {
-				DMSG("fTPM: Failed to open fTPM storage object %d", i);
+				DMSG("fTPM: Failed to open fTPM storage object %d (0x%x)", i, Result);
+				s_NVStorageState = TEE_ERROR_BAD_STATE;
 				goto Error;
 			}
 
@@ -170,6 +318,7 @@ _plat__NvInitFromStorage()
 			// There was an error, fail the init, NVEnable can retry.
 			if (Result != TEE_SUCCESS) {
 				DMSG("Failed to create fTPM storage object");
+				s_NVStorageState = TEE_ERROR_STORAGE_NOT_AVAILABLE;
 				goto Error;
 			}
 
@@ -192,8 +341,15 @@ _plat__NvInitFromStorage()
 										&bytesRead);
 
 			// Give up on failed or incomplete reads.
-			if ((Result != TEE_SUCCESS) || (bytesRead != NV_BLOCK_SIZE)) {
+			if (Result != TEE_SUCCESS) {
 				DMSG("Failed to read fTPM storage object");
+				s_NVStorageState = TEE_ERROR_STORAGE_NOT_AVAILABLE;
+				goto Error;
+			}
+
+			if (bytesRead != NV_BLOCK_SIZE) {
+				DMSG("fTPM storage objects are the wrong size");
+				s_NVStorageState = TEE_ERROR_NOT_SUPPORTED;
 				goto Error;
 			}
 
@@ -204,26 +360,13 @@ _plat__NvInitFromStorage()
 
     // Storage objects are open and valid, next validate revision. Note that a
     // change to s_chipRevision width also requires a change to NvMemoryLayout.h.
+	// Reaching here means that we recognize the storage, but may still need to 
+	// reset its contents.
 	s_chipRevision = ((((UINT64)firmwareV2) << 32) | (firmwareV1));
 	if ((s_chipRevision != *(UINT64*)&(s_NV[NV_CHIP_REVISION_OFFSET]))) {
-
-		// Failure to validate revision, re-init (only the TPM's NV memory)
-		memset(s_NV, 0, (NV_TPM_STORAGE_SIZE));
-
-        // Going to manufacture, ensure zero flags
-        g_chipFlags.flags = 0;
-
-        // Save flags
-        _admin__SaveChipFlags();
-
-		// Dirty the block map, we're going to re-init.
-        _plat__MarkDirtyBlocks(0, (NV_TPM_STORAGE_SIZE));
-
-		// Init with proper revision
-		s_chipRevision = ((((UINT64)firmwareV2) << 32) | (firmwareV1));
-		*(UINT64*)&(s_NV[NV_CHIP_REVISION_OFFSET]) = s_chipRevision;
-
-		DMSG("Failed to validate revision. Did we just (re)-init?");
+		// Failure to validate revision, this may be recoverable. If not we will
+		// wipe the NV storage and re-manufacture.
+		s_NVStorageState = TEE_ERROR_NOT_SUPPORTED;
 
 		// Force (re)manufacture.
 		s_NVChipFileNeedsManufacture = TRUE;
@@ -231,6 +374,8 @@ _plat__NvInitFromStorage()
 
 	// The NV storage has been loaded, however may still require manufacturing
 	s_NVInitialized = TRUE;
+
+	s_NVStorageState = TEE_SUCCESS;
 
 	return;
 
