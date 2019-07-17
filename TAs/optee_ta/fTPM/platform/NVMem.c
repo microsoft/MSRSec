@@ -379,7 +379,7 @@ _plat__NVEnable(
     _plat__NvInitFromStorage();
 
     // Were we successful?
-    if (s_NVChipFileNeedsManufacture == FALSE || s_NVInitialized == FALSE) {
+    if (s_NVChipFileNeedsManufacture == TRUE || s_NVInitialized == FALSE) {
         // Arriving here means one of two things: Either there existed no
         // NV state before we came along and we just (re)initialized our
         // storage. Or there is an error condition preventing us from 
