@@ -36,6 +36,8 @@
 #ifndef FTPM_TA_H
 #define FTPM_TA_H
 
+#include <tee_internal_api.h>
+
 //
 // This UUID is generated with uuidgen
 //
@@ -92,6 +94,9 @@ extern void _plat__Signal_PowerOn(void);
 extern void _plat__NVDisable(void);
 extern void _admin__SaveChipFlags(void);
 
+extern TEE_Result _plat__NvRecoverStorage(void);
+
+
 //
 // External types/data supporting TPM initialization
 //
@@ -105,4 +110,6 @@ typedef union {
 } TPM_CHIP_STATE;
 
 extern TPM_CHIP_STATE g_chipFlags;
+extern bool g_inFailureMode;
+
 #endif /* FTPM_TA_H */

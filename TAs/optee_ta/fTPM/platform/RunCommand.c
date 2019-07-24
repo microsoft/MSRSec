@@ -94,5 +94,6 @@ _plat__Fail(
 #if FAIL_TRACE
     EMSG("%s:%d", s_failFunction, s_failLine);
 #endif
+    longjmp(&(s_jumpBuffer[0]), 1);
     TEE_Panic(TEE_ERROR_BAD_STATE);
 }

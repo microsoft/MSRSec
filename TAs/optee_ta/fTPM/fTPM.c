@@ -119,12 +119,14 @@ TEE_Result TA_CreateEntryPoint(void)
                                            0x00, 0x00, 0x01, 0x44, 0x00, 0x01 };
     uint32_t respLen;
     uint8_t *respBuf;
+    uint32_t result;
+    TEE_Result teeResult;
 
     // If we've been here before, don't init again.
     if (fTPMInitialized) {
         // We may have had TA_DestroyEntryPoint called but we didn't 
         // actually get torn down. Re-NVEnable, just in case.
-        if (_plat__NVEnable(NULL) == 0) {
+        if (_plat__NVEnable(NULL) != 0) {
             TEE_Panic(TEE_ERROR_BAD_STATE);
         }
         return TEE_SUCCESS;
@@ -134,8 +136,26 @@ TEE_Result TA_CreateEntryPoint(void)
     _admin__NvInitState();
 
     // If we fail to open fTPM storage we cannot continue.
-    if (_plat__NVEnable(NULL) == 0) {
-        TEE_Panic(TEE_ERROR_BAD_STATE);
+    DMSG("fTPM attempting to enable NV storage");
+    result = _plat__NVEnable(NULL);
+    if (result != 0) {
+        EMSG("fTPM failed to load NV storage");
+        if (result > 0) {
+            EMSG("Possibly a recoverable failure...");            // This is a possibly recoverable error, try to fix it and re-enable.
+            teeResult = _plat__NvRecoverStorage();
+            if (teeResult == TEE_ERROR_STORAGE_NOT_AVAILABLE || 
+                teeResult == TEE_SUCCESS)
+            {
+                EMSG("Possible storage recovery completed (0x%x)", teeResult);
+                result = _plat__NVEnable(NULL);
+            }
+        }
+
+        if (result != 0)
+        {
+            EMSG("fTPM unrecoverable failure when enabling NV storage (0x%x)", result);
+            TEE_Panic(TEE_ERROR_BAD_STATE);
+        }
     }
 
     // This only occurs when there is no previous NV state, i.e., on first
@@ -145,30 +165,28 @@ TEE_Result TA_CreateEntryPoint(void)
         TPM_Manufacture(1);
     }
 
+    DMSG("fTPM Power on");
     // "Power-On" the platform
     _plat__Signal_PowerOn();
 
+    DMSG("fTPM Init");
     // Internal init for reference implementation
     _TPM_Init();
 
     // Startup with state
     if (g_chipFlags.fields.TpmStatePresent) {
-
+        DMSG("fTPM Found existing state");
         // Re-use request buffer for response (ignored)
         respBuf = startupState;
         respLen = STARTUP_SIZE;
 
-        ExecuteCommand(STARTUP_SIZE, startupState, &respLen, &respBuf);
+        _plat__RunCommand(STARTUP_SIZE, startupState, &respLen, &respBuf);
         if (fTPMResponseCode(respLen, respBuf) == TPM_RC_SUCCESS) {
+            DMSG("fTPM starup success");
             goto Exit;
         }
 
-#ifdef fTPMDebug
         DMSG("Fall through to startup clear\n");
-#endif
-
-        //DMSG("Start self test");
-        //CryptSelfTest(1);
 
         goto Clear;
     }
@@ -179,7 +197,7 @@ Clear:
     respLen = STARTUP_SIZE;
 
     // Fall back to a Startup Clear
-    ExecuteCommand(STARTUP_SIZE, startupClear, &respLen, &respBuf);
+    _plat__RunCommand(STARTUP_SIZE, startupClear, &respLen, &respBuf);
 
 Exit:
     // Init is complete, indicate so in fTPM admin state.
@@ -189,7 +207,18 @@ Exit:
     // Initialization complete
     fTPMInitialized = true;
 
-    return TEE_SUCCESS;
+#ifdef fTPMDebug
+    DMSG("Start forced self test");
+    CryptSelfTest(1);
+#endif
+
+    if (g_inFailureMode) {
+        EMSG("Startup failed");
+        return TEE_ERROR_BAD_STATE;
+    } else {
+        EMSG("Startup succeeded");
+        return TEE_SUCCESS;
+    }
 }
 
 
@@ -303,7 +332,7 @@ static TEE_Result fTPM_Submit_Command(uint32_t  param_types,
     // Check if this is a PPI Command
     if (!_admin__PPICommand(cmdLen, cmdBuf, &respLen, &respBuf)) {
         // If not, pass through to TPM
-        ExecuteCommand(cmdLen, cmdBuf, &respLen, &respBuf);
+        _plat__RunCommand(cmdLen, cmdBuf, &respLen, &respBuf);
     }
     // Unfortunately, this cannot be done until after we have our response in
     // hand. We will, however, make an effort to return at least a portion of
@@ -319,7 +348,12 @@ static TEE_Result fTPM_Submit_Command(uint32_t  param_types,
     DMSG("Success, RS: 0x%x\n", respLen);
 #endif
 
-    return TEE_SUCCESS;
+    if (g_inFailureMode) {
+        EMSG("fTPM in failure mode!");
+        return TEE_ERROR_BAD_STATE;
+    } else {
+        return TEE_SUCCESS;
+    }
 }
 
 //
