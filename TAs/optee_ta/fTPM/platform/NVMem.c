@@ -199,7 +199,8 @@ _plat__NvInitFromStorage()
 
 			// Give up on failed or incomplete reads.
 			if ((Result != TEE_SUCCESS) || (bytesRead != NV_BLOCK_SIZE)) {
-				DMSG("Failed to read fTPM storage object");
+				EMSG("Failed to read fTPM storage object");
+				EMSG("Consider clearing OP-TEE storage?");
 				goto Error;
 			}
 
