@@ -76,12 +76,12 @@ string.
 // The FIRMWARE_V2 may also be defined as appropriate.
 
 //Date of last update: (0xYYYMMDD)
-#define   FIRMWARE_V1         (0x20180710)
+#define   FIRMWARE_V1         (0x20190730)
 // the less significant 32-bits of a vendor-specific value
 // indicating the version of the firmware
 
 //Time of last update: (0x00HHMMSS)
-#define   FIRMWARE_V2         (0x00105300)
+#define   FIRMWARE_V2         (0x00174800)
 
 // The following #if macro may be deleted after a proper FIRMWARE_V1 is provided.
 #ifndef FIRMWARE_V1
