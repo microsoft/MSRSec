@@ -134,6 +134,17 @@ ValidateParameters(
 
 static
 TEE_Result
+PrivateVarAuth(
+    PBYTE AuthenticationData,       // IN
+    UINT32 AuthenticationDataSize,  // IN
+    PBYTE Data,                     // IN
+    UINT32 DataSize,                // IN
+    PBYTE DataToVerify,             // IN
+    UINT32 DataToVerifySize         // IN
+);
+
+static
+TEE_Result
 SecureBootVarAuth(
     SECUREBOOT_VARIABLE Id,         // IN
     PBYTE AuthenticationData,       // IN
@@ -674,7 +685,7 @@ AuthenticateSetVariable(
 
     DMSG("IdentifySecureBootVarialbe");
 
-    // Proceed only if this is a secure boot variable
+    // Is this a secure boot variable?
     if (IdentifySecurebootVariable(UnicodeName->Buffer, VendorGuid, &id))
     {
         DMSG("Doing securebootvarauth");
@@ -686,14 +697,17 @@ AuthenticateSetVariable(
             goto Cleanup;
         }
         DMSG("ret from SecureBootVarAuth %x", status);
-
     }
     else
     {
-        // Private authenticated variables not implemented
-        status = TEE_ERROR_NOT_IMPLEMENTED;
-        DMSG("Private authenticated variables not implemented");
-        goto Cleanup;
+        // No, private authenticated variable
+        status = PrivateVarAuth(signedData, signedDataSize, data, dataSize, dataToVerify, dataToVerifySize);
+        if (status != TEE_SUCCESS)
+        {
+            DMSG("FAILED PrivateVarAuth %x", status);
+            goto Cleanup;
+        }
+        DMSG("ret from PrivateVarAuth %x", status);
     }
 
     // As per UEFI specification, the driver does not have to append signature values
@@ -863,6 +877,79 @@ ValidateParameters(
     status = TEE_SUCCESS;
     
 Cleanup:
+    return status;
+}
+
+static
+TEE_Result
+PrivateVarAuth(
+    PBYTE AuthenticationData,       // IN
+    UINT32 AuthenticationDataSize,  // IN
+    PBYTE Data,                     // IN
+    UINT32 DataSize,                // IN
+    PBYTE DataToVerify,             // IN
+    UINT32 DataToVerifySize         // IN
+)
+/*++
+
+    Routine Description:
+
+        Function to authenticate access to private variable.
+
+    Arguments:
+
+        AuthenticationData - PKCS#7 Signed Data to authenticate Data
+
+        AuthenticationDataSize - Size in bytes of AuthenticationData
+
+        Data - Content of the variable
+
+        DataSize - Size in bytes of the variable
+
+        DataToVerify - Content of the data to verify packet.
+
+        DataToVerifySize - Size in bytes of the data to verify packet.
+
+    Returns:
+
+        Status Code
+
+    Notes:
+
+        Comparison with EDKII AuthService::VerifyTimeBasedPayload
+         - AuthenticationData === SigData
+         - Data === NewData
+           - The serialized stream of the UEFI variable info + payload data.
+--*/
+{
+    VOID *certs = NULL;
+    UINT32 certCount = 0, i;
+    TEE_Result status = TEE_ERROR_ACCESS_DENIED;
+    BOOLEAN verifyStatus = FALSE;
+
+    // Unused parameters
+    UNUSED_PARAMETER(Data);
+    UNUSED_PARAMETER(DataSize);
+
+    // Private authenticated variables follow the same rules as, for example,
+    // modifications of SecureBootVariablePK in setup mode. The AuthenticationData
+    // we're given contains the PKCS7 signer certificates we will validate against.
+
+    // Verify Pkcs7 AuthenticationData
+    verifyStatus = Pkcs7Verify(AuthenticationData, AuthenticationDataSize,
+                               0, NULL,
+                               DataToVerify, DataToVerifySize);
+    // Success/failure
+    if (!verifyStatus)
+    {
+        status = TEE_ERROR_ACCESS_DENIED;
+        goto Cleanup;
+    } 
+
+    // Success
+    status = TEE_SUCCESS;
+
+ Cleanup:
     return status;
 }
 
