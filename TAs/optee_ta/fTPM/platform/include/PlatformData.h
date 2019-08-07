@@ -38,11 +38,8 @@
 #ifndef _PLATFORM_DATA_H_
 #define _PLATFORM_DATA_H_
 
-
-#include      "Implementation.h"
-
 // From Cancel.c
-// Cancel flag.  It is initialized as FALSE, which indicate the command is not
+// This flag is initialized as FALSE to indicate that the command is not
 // being canceled
 extern int     s_isCanceled;
 
@@ -69,9 +66,9 @@ extern BOOL              s_timerStopped;
 // CLOCK_NOMINAL is the number of hardware ticks per mS. A value of 300000 means 
 // that the nominal clock rate used to drive the hardware clock is 30 MHz. The
 // adjustment rates are used to determine the conversion of the hardware ticks to
-// internal hardware clock value. In practice, we would expect that there woudl be
-// a hardware register will accumulated mS. It would be incremented by the output
-// of a pre-scaler. The pre-scaler would divide the ticks from the clock by some
+// internal hardware clock value. In practice, we would expect that there would be
+// a hardware register with accumulated mS. It would be incremented by the output
+// of a prescaler. The prescaler would divide the ticks from the clock by some
 // value that would compensate for the difference between clock time and real time.
 // The code in Clock does the emulation of this function. 
 #define     CLOCK_NOMINAL           30000
@@ -113,13 +110,16 @@ extern unsigned char s_locality;
 #   define  FILE_BACKED_NV          (VTPM && YES)     // Default: Either YES or NO
 #endif
 
-#if !SIMULATION
+#if SIMULATION
 #   undef       FILE_BACKED_NV
-#   define      FILE_BACKED_NV          NO
+#   define      FILE_BACKED_NV          YES
 #endif // SIMULATION
 
 extern unsigned char     *s_NV;
 extern BOOL              s_NvIsAvailable;
+extern BOOL              s_NV_unrecoverable;
+extern BOOL              s_NV_recoverable;
+
 
 // For PPPlat.c
 // Physical presence.  It is initialized to FALSE

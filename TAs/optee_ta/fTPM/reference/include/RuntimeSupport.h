@@ -45,18 +45,6 @@
 
 typedef uint64_t clock_t;
 
-/*#if defined(TRUE)
-#undef TRUE
-#endif
-
-#if defined FALSE
-#undef FALSE
-#endif
-
-typedef int BOOL;
-#define FALSE   ((BOOL)0)
-#define TRUE    ((BOOL)1)*/
-
 typedef uint8_t             UINT8;
 typedef uint8_t             BYTE;
 typedef int8_t              INT8;

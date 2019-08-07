@@ -45,10 +45,8 @@
 #include <stdint.h>
 #include <trace.h>
 #include "swap.h"
-#include "Implementation.h"
 #include "TpmSal.h"
 #include "TpmError.h"
-#include <NvMemoryLayout.h>
 
 // Parameter reference and types from ref impl headers
 #ifndef UNREFERENCED_PARAMETER

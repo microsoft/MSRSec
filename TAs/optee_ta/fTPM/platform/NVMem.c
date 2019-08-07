@@ -37,18 +37,16 @@
 // NV memory handling
 //
 
+#include "Platform.h"
 #include "TpmError.h"
 #include "Admin.h"
 #include "VendorString.h"
 #include "stdint.h"
 #include "malloc.h"
 #include "string.h"
-#include "NvMemoryLayout.h"
 
 #include <tee_internal_api.h>
 #include <tee_internal_api_extensions.h>
-
-
 
 // Used to translate nv offset to block map offset
 #define NV_INDEX_MASK       (0xC0UL)
@@ -548,18 +546,22 @@ _plat__MarkDirtyBlocks (
 // NOTE: A useful optimization would be for this code to compare the current 
 // contents of NV with the local copy and note the blocks that have changed. Then
 // only write those blocks when _plat__NvCommit() is called.
-LIB_EXPORT void
+LIB_EXPORT BOOL
 _plat__NvMemoryWrite(
     unsigned int        startOffset,         // IN: write start
     unsigned int        size,                // IN: size of bytes to read
     void                *data                // OUT: data buffer
 )
 {
-    pAssert(startOffset + size <= NV_TOTAL_MEMORY_SIZE);
     pAssert(s_NV != NULL);
 
-	_plat__MarkDirtyBlocks(startOffset, size);
-    memcpy(&s_NV[startOffset], data, size);
+    if ((startOffset + size) <= (NV_TOTAL_MEMORY_SIZE))
+    {
+        _plat__MarkDirtyBlocks(startOffset, size);
+        memcpy(&s_NV[startOffset], data, size);
+        return TRUE;
+    }
+    return FALSE;
 }
 
 //***_plat__NvMemoryClear()

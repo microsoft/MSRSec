@@ -32,20 +32,26 @@
  *  (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
  *  SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+// Root header file for building any TPM.lib code
 
-#ifndef     _BOOL_H
-#define     _BOOL_H
+#ifndef     _TPM_H_
+#define     _TPM_H_
 
-#if defined(TRUE)
-#undef TRUE
-#endif
+/* The TA overrides a few headers, noted below in '""' */
 
-#if defined FALSE
-#undef FALSE
-#endif
+#include <TpmBuildSwitches.h>
+#include <BaseTypes.h>
+#include <TPMB.h>
+#include <MinMax.h>
 
-typedef int BOOL;
-#define FALSE   ((BOOL)0)
-#define TRUE    ((BOOL)1)
+#include "TpmProfile.h"
+#include "TpmAlgorithmDefines.h"
+#include "LibSupport.h"         // Types from the library. These need to come before
+                                // Global.h because some of the structures in
+                                // that file depend on the structures used by the
+                                // cryptographic libraries.
+#include <GpMacros.h>           // Define additional macros
+#include <Global.h>             // Define other TPM types
+#include <InternalRoutines.h>   // Function prototypes
 
-#endif
+#endif // _TPM_H_

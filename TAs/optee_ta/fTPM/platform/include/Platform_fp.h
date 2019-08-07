@@ -34,24 +34,19 @@
  */
 /*(Auto-generated)
  *  Created by TpmPrototypes; Version 3.0 July 18, 2017
- *  Date: Aug  7, 2018  Time: 03:39:35PM
+ *  Date: Apr  2, 2019  Time: 04:26:21PM
  */
 
 #ifndef    _PLATFORM_FP_H_
 #define    _PLATFORM_FP_H_
 
-//** From EPS.c
-
-LIB_EXPORT void
-_plat__GetEPS(size_t Size, uint8_t *EndorsementSeed);
-
 //** From Cancel.c 
 
 //***_plat__IsCanceled()
 // Check if the cancel flag is set
-// return type: BOOL
-//      TRUE(1)      if cancel flag is set
-//      FALSE(0)     if cancel flag is not set
+//  Return Type: int
+//      TRUE(1)         if cancel flag is set
+//      FALSE(0)        if cancel flag is not set
 LIB_EXPORT int
 _plat__IsCanceled(
     void
@@ -150,13 +145,41 @@ _plat__ClockAdjustRate(
     );
 
 
+//** From DebugHelpers.c 
+
+#if CERTIFYX509_DEBUG
+
+//*** DebugFileOpen()
+// This function opens the file used to hold the debug data.
+//  Return Type: int
+//   0        success
+//  != 0          error
+int
+DebugFileOpen(
+    void
+);
+
+void
+DebugFileClose(
+    void
+);
+
+void
+DebugDumpBuffer(
+    int             size,
+    unsigned char   *buf,
+    const char      *identifier
+);
+#endif // CERTIFYX509_DEBUG
+
+
 //** From Entropy.c 
 
-//** _plat__GetEntropy()
+//*** _plat__GetEntropy()
 // This function is used to get available hardware entropy. In a hardware
 // implementation of this function, there would be no call to the system
 // to get entropy.
-// return type: int32_t
+//  Return Type: int32_t
 //  < 0        hardware failure of the entropy generator, this is sticky
 // >= 0        the returned amount of entropy (bytes)
 //
@@ -164,7 +187,7 @@ LIB_EXPORT int32_t
 _plat__GetEntropy(
     unsigned char       *entropy,           // output buffer
     uint32_t             amount             // amount requested
-    );
+);
 
 
 //** From LocalityPlat.c 
@@ -208,7 +231,7 @@ _plat__NvErrors(
 // The recovery from an integrity failure depends on where the error occurred. It
 // it was in the state that is discarded by TPM Reset, then the error is
 // recoverable if the TPM is reset. Otherwise, the TPM must go into failure mode.
-// return type: int
+//  Return Type: int
 //      0           if success
 //      > 0         if receive recoverable error
 //      <0          if unrecoverable error
@@ -226,7 +249,7 @@ _plat__NVDisable(
 
 //***_plat__IsNvAvailable()
 // Check if NV is available
-// return type: int
+//  Return Type: int
 //      0               NV is available
 //      1               NV is not available due to write failure
 //      2               NV is not available due to rate limit
@@ -247,9 +270,9 @@ _plat__NvMemoryRead(
 //*** _plat__NvIsDifferent()
 // This function checks to see if the NV is different from the test value. This is
 // so that NV will not be written if it has not changed.
-// return value: int
-//  TRUE(1)    the NV location is different from the test value
-//  FALSE(0)   the NV location is the same as the test value
+//  Return Type: int
+//      TRUE(1)         the NV location is different from the test value
+//      FALSE(0)        the NV location is the same as the test value
 LIB_EXPORT int
 _plat__NvIsDifferent(
     unsigned int     startOffset,   // IN: read start
@@ -264,7 +287,7 @@ _plat__NvIsDifferent(
 // NOTE: A useful optimization would be for this code to compare the current
 // contents of NV with the local copy and note the blocks that have changed. Then
 // only write those blocks when _plat__NvCommit() is called.
-LIB_EXPORT void
+LIB_EXPORT BOOL
 _plat__NvMemoryWrite(
     unsigned int     startOffset,   // IN: write start
     unsigned int     size,          // IN: size of bytes to write
@@ -294,7 +317,7 @@ _plat__NvMemoryMove(
 //***_plat__NvCommit()
 // This function writes the local copy of NV to NV for permanent store. It will write
 // NV_MEMORY_SIZE bytes to NV. If a file is use, the entire file is written.
-// return type: int
+//  Return Type: int
 //  0       NV write success
 //  non-0   NV write fail
 LIB_EXPORT int
@@ -318,6 +341,13 @@ _plat__ClearNvAvail(
     void
     );
 
+//*** _plat__NVNeedsManufacture()
+// This function is used by the simulator to determine when the TPM's NV state
+// needs to be manufactured.
+LIB_EXPORT BOOL
+_plat__NVNeedsManufacture(
+    void
+    );
 
 //** From PowerPlat.c 
 
@@ -337,9 +367,9 @@ _plat__Signal_PowerOn(
 // TPM code and, if the hardware actually works this way, it is hard to make it
 // look like anything else. So, the burden is placed on the TPM code rather than the
 // platform code
-// return type: int
-//  TRUE(1)     power was lost
-//  FALSE(0)    power was not lost
+//  Return Type: int
+//      TRUE(1)         power was lost
+//      FALSE(0)        power was not lost
 LIB_EXPORT int
 _plat__WasPowerLost(
     void
@@ -364,9 +394,9 @@ _plat__Signal_PowerOff(
 
 //***_plat__PhysicalPresenceAsserted()
 // Check if physical presence is signaled
-// return type: int
-//      TRUE(1)          if physical presence is signaled
-//      FALSE(0)         if physical presence is not signaled
+//  Return Type: int
+//      TRUE(1)         if physical presence is signaled
+//      FALSE(0)        if physical presence is not signaled
 LIB_EXPORT int
 _plat__PhysicalPresenceAsserted(
     void
@@ -428,5 +458,13 @@ _plat__GetUnique(
     uint32_t             bSize,         // size of the buffer
     unsigned char       *b              // output buffer
     );
+
+//** From EPS.c 
+
+#if (defined USE_PLATFORM_EPS) && (USE_PLATFORM_EPS != NO)
+//** _plat__GetEPS()
+// This function is used to access the platform provided EPS value.
+void _plat__GetEPS(UINT16, BYTE*);
+#endif
 
 #endif  // _PLATFORM_FP_H_
