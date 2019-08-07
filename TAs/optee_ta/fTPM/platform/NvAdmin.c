@@ -37,6 +37,7 @@
 // Force Global.h contents inclusion
 #define GLOBAL_C
 
+#include "Platform.h"
 #include "Admin.h"
 
 //**Types, Structures, and Defines

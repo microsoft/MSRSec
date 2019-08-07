@@ -34,7 +34,6 @@ $(TPM_ROOT)/README.md:
 
 TPM_INCLUDES = \
  tpm_symlink/tpm/include \
- tpm_symlink/tpm/include/ltc \
  tpm_symlink/tpm/include/prototypes \
 
 ifeq ($(CFG_FTPM_USE_WOLF),y)
@@ -255,5 +254,5 @@ else
 endif
 
 srcs-y = $(foreach tpmfile, $(TPM_ACTIVE_SOURCES), $(tpmfile) )
-$(foreach tpmfile, $(TPM_ACTIVE_SOURCES), $(eval  cflags-$(tpmfile)-y += $(FTPM_FLAGS) $(WOLF_SSL_FLAGS) $(INCLUDE_OVERWRITES) $(FTPM_WARNING_SUPPRESS)))
+$(foreach tpmfile, $(TPM_ACTIVE_SOURCES), $(eval  cflags-$(tpmfile)-y += $(FTPM_FLAGS) $(WOLF_SSL_FLAGS) $(FTPM_WARNING_SUPPRESS)))
 $(foreach tpmfile, $(TPM_ACTIVE_SOURCES), $(eval  incdirs-$(tpmfile)-y += $(TPM_INCLUDES) $(OSSL_INCLUDES)))

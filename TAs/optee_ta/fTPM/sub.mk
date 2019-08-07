@@ -17,15 +17,6 @@ WOLF_SSL_FLAGS += -DSINGLE_THREADED -DNO_WOLFSSL_CLIENT -DNO_WOLFSSL_SERVER -DOP
 WOLF_WARNING_SUPPRESS += -Wno-unused-function -Wno-switch-default
 endif
 
-#
-# The fTPM needs to overwrite some of the header files used in the reference implementation. The search order GCC
-# uses is dependent on the order the '-I/include/path' arguments are passed in. This is depended on the optee_os build
-# system which makes it brittle. Force including these files here will make sure the correct files are used first.
-#
-FTPM_INCLUDES = -include ./reference/include/VendorString.h -include ./reference/include/Implementation.h
-WOLF_INCLUDES = 
-INCLUDE_OVERWRITES = $(FTPM_INCLUDES) $(WOLF_INCLUDES)
-
 CPPFLAGS += -DTHIRTY_TWO_BIT -DCFG_TEE_TA_LOG_LEVEL=$(CFG_TEE_TA_LOG_LEVEL) -D_ARM_ -w -Wno-strict-prototypes -mcpu=$(TA_CPU) -fstack-protector -Wstack-protector
 
 ifeq ($(CFG_ARM64_ta_arm64),y)
@@ -57,9 +48,14 @@ clean: clean_lib_symlinks
 
 subdirs-y += lib
 
+#
+# Order is important here since we override a few headers from the reference implementation
+#
 global-incdirs-y += include
 global-incdirs-y += reference/include
 global-incdirs-y += platform/include
+global-incdirs-y += lib/tpm/tpm_symlink/tpm/include
+global-incdirs-y += lib/tpm/tpm_symlink/tpm/include/prototypes
 
 PLATFORM_SOURCES =  \
  platform/AdminPPI.c \
@@ -81,5 +77,4 @@ PLATFORM_SOURCES =  \
 srcs-y += fTPM.c
 
 srcs-y += $(foreach platfile, $(PLATFORM_SOURCES), $(platfile) )
-$(foreach platfile, $(PLATFORM_SOURCES), $(eval  cflags-$(platfile)-y += $(FTPM_FLAGS) $(WOLF_SSL_FLAGS) $(INCLUDE_OVERWRITES) $(FTPM_WARNING_SUPPRESS)))
-$(foreach platfile, $(PLATFORM_SOURCES), $(eval  incdirs-$(platfile)-y += lib/tpm/tpm_symlink/tpm/include lib/tpm/tpm_symlink/tpm/include/prototypes ))
+$(foreach platfile, $(PLATFORM_SOURCES), $(eval  cflags-$(platfile)-y += $(FTPM_FLAGS) $(WOLF_SSL_FLAGS) $(FTPM_WARNING_SUPPRESS)))

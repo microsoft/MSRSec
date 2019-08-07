@@ -40,8 +40,7 @@
 // between the TPM and the manufacturer.
 
 //** Includes
-#include "PlatformData.h"
-#include "Platform_fp.h"
+#include "Platform.h"
 
 #include <tee_internal_api.h>
 #include <assert.h>

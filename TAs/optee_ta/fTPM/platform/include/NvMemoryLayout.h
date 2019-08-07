@@ -36,14 +36,8 @@
 #ifndef _COMBINEDNVMEMORY_H
 #define _COMBINEDNVMEMORY_H
 
-#include <PlatformData.h>
 #define ROUNDUP(x, y)			((((x) + (y) - 1) / (y)) * (y))
 
-//
-// NV Memory is currently 0x4000, to enforce transactional writes leave it as a single block
-// for now.
-//
-//#define NV_BLOCK_SIZE           (0x4000UL)
 #define NV_BLOCK_SIZE           (0x1000UL)
 
 // Actual size of Admin space used. (See note in NVMem.c):

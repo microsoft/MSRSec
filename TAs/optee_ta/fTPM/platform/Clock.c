@@ -41,8 +41,7 @@
 // However, the precision of the clock functions may be implementation dependent.
 
 //** Includes and Data Definitions
-#include "PlatformData.h"
-#include "Platform_fp.h"
+#include "Platform.h"
 #include "TpmFail_fp.h"
 #include <assert.h>
 #include <tee_internal_api.h>

@@ -37,8 +37,8 @@
 // Platform Endorsement Primary Seed
 //
 
-#include "TpmError.h"
-#include "Admin.h"
+#include "Platform.h"
+#include "TpmAlgorithmDefines.h"
 
 #include <tee_internal_api.h>
 #include <tee_internal_api_extensions.h>
@@ -51,7 +51,7 @@
 #define TEE_EPS_SIZE      SHA512_DIGEST_SIZE
 
 void
-_plat__GetEPS(size_t Size, uint8_t *EndorsementSeed)
+_plat__GetEPS(UINT16 Size, BYTE *EndorsementSeed)
 {
     TEE_Result Result = TEE_ERROR_ITEM_NOT_FOUND;
     uint8_t EPS[TEE_EPS_SIZE] = { 0 };

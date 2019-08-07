@@ -36,15 +36,19 @@
 //**Introduction
 // This file contains the emulated Physical Presence Interface.
 
-#include "assert.h"
+#include "Platform.h"
 #include "Admin.h"
 #include "string.h"
+#include "assert.h"
 
 #include <tee_internal_api.h>
 #include <tee_internal_api_extensions.h>
 
-#define TPM_CC_EmulatePPI     0x200001FF
+// TPM_CC typedef (This must match TpmTypes.h)
+typedef UINT32              TPM_CC;
 
+// Emulated PPI TPM_CC
+#define TPM_CC_EmulatePPI   0x200001FF
 //
 // Hand marshaling, unmarshaling, and maximally sized structures for EmulatePPI
 //
