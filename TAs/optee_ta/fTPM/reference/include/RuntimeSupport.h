@@ -43,6 +43,19 @@
 #include <ctype.h>
 #include <stddef.h>
 
+//
+// Some definitions we need ahead of TpmProfile.h
+//
+#ifdef USE_WOLFCRYPT
+#undef  YES
+#define YES     1
+#undef  NO
+#define NO      0
+#define ALG_YES YES
+#define ALG_NO  NO
+#include <TpmProfile.h>
+#endif
+
 typedef uint64_t clock_t;
 
 typedef uint8_t             UINT8;
@@ -61,7 +74,7 @@ typedef int64_t             INT64;
 // These defines are not used anywhere else so it is safe
 // to leave them no matter what crypto package is used.
 //
-
+#ifdef USE_WOLFCRYPT
 #ifndef XMEMCPY
 #define XMEMCPY(pdest, psrc, size) memcpy((pdest), (psrc), (size))
 #endif
@@ -132,5 +145,5 @@ extern void *wolfRealloc(void *p, size_t n);
 #define XMALLOC(sz, heap, type)     wolfMalloc(sz)
 #define XREALLOC(p, sz, heap, type) wolfRealloc(p, sz)
 #define XFREE(p, heap, type)        TEE_Free(p)
-
+#endif
 #endif

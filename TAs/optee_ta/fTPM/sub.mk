@@ -57,6 +57,11 @@ global-incdirs-y += platform/include
 global-incdirs-y += lib/tpm/tpm_symlink/tpm/include
 global-incdirs-y += lib/tpm/tpm_symlink/tpm/include/prototypes
 
+ifeq ($(CFG_FTPM_USE_WOLF),y)
+global-incdirs-y += lib/tpm/tpm_symlink/tpm/include/Wolf
+WOLF_SSL_FLAGS += -include ./reference/include/RuntimeSupport.h
+endif
+
 PLATFORM_SOURCES =  \
  platform/AdminPPI.c \
  platform/Cancel.c \
