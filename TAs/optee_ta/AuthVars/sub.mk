@@ -51,6 +51,7 @@ clean: clean_lib_symlinks
 cflags-y += $(AUTHVAR_FLAGS) $(SSL_FLAGS) $(INCLUDE_OVERWRITES)
 
 subdirs-y += lib
+subdirs-y += defaultvars
 
 global-incdirs-y += src/include
 
