@@ -32,6 +32,10 @@
  */
 
 #include <varmgmt.h>
+#ifdef CFG_AUTHVARS_DEFAULT_VARS
+#include <defaultvars.h>
+#endif
+
 
 // 
 // Auth Var in-memory storage layout
@@ -207,6 +211,13 @@ AuthVarInitStorage(
         if (status == TEE_ERROR_ITEM_NOT_FOUND)
         {
             DMSG("No stored variables found");
+#ifdef CFG_AUTHVARS_DEFAULT_VARS
+            status = InitializeDefaultVariables();
+            if (status != TEE_SUCCESS) {
+                EMSG("Failed to set default variables");
+                goto Cleanup;
+            }
+#endif
             status = TEE_SUCCESS;
         }
         goto Cleanup;
