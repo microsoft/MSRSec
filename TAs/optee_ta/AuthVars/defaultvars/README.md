@@ -21,11 +21,18 @@ The variables will be saved into the AuthVar TA in the order they are found in t
             "name": "Default Volatile Variable Example / (Supports ECS-2 characters ✍)",
             "bin_path": "defaultvars/example.bin",
             "guid": "{0xe4b297c1, 0x507d, 0x407f, {0xbe,0x4a,0xe9,0x25,0x68,0x69,0x25,0x14}}",
-            "attributes": "EFI_VARIABLE_APPEND_WRITE | EFI_VARIABLE_RUNTIME_ACCESS | EFI_VARIABLE_BOOTSERVICE_ACCESS"
+            "attributes": "EFI_VARIABLE_APPEND_WRITE | EFI_VARIABLE_NON_VOLATILE | EFI_VARIABLE_RUNTIME_ACCESS | EFI_VARIABLE_BOOTSERVICE_ACCESS"
         }
     ]
 }
 ```
+
+### Examples
+Two examples are included, along with binaries.
+
+The first example, `defaultvars_example.json`, is included by default if `CFG_DEFAULT_VARS_JSON` is left unset. It adds a single variable (as shown above).
+
+The second example, `defaultvars_secureboot_example.json` can be used by setting `CFG_DEFAULT_VARS_JSON=defaultvars/defaultvars_secureboot_example.json`. This example automatically enables secure boot using **NON-SECURE** keys from the [TurnkeySecurity](https://github.com/ms-iot/security/tree/master/TurnkeySecurity) repository. They are included for example purposes only. A production image must use newly generated signing keys.
 
 ### Text Encoding of Variable Names
 The JSON file **must be `UTF-8` encoded**, as the python script explicitly decodes it as UTF-8. The JSON file may contain *MOST*, **but not all** unicode characters. UEFI uses ECS-2 encoding for its strings, a subset of UTF-16. ECS-2 does not allow 4-byte characters to be stored, so no UTF-16 surrogate pairs. Valid ECS-2 values are: `[0x0000, 0xd800] ∪ [0xdfff, 0xffff]`. The python script used to compile the variables will check the validity of the encoding for each character.
