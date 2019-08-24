@@ -215,6 +215,10 @@ AuthVarInitStorage(
             status = InitializeDefaultVariables();
             if (status != TEE_SUCCESS) {
                 EMSG("Failed to set default variables");
+                // TODO: We should set up all the variables which were just
+                // created, or add variable by variable checking to make sure
+                // we don't miss any variables in the case one fails, or the 
+                // TA is interuppted during its first boot.
                 goto Cleanup;
             }
 #endif
