@@ -66,12 +66,6 @@ VTYPE_INFO VarInfo[VTYPE_END] =
 AUTHVAR_META    VarList[MAX_AUTHVAR_ENTRIES] = { 0 };
 
 //
-// Object enumerator and next free meta index value
-//
-static TEE_ObjectEnumHandle    AuthVarEnumerator = NULL;
-static USHORT                  NextFreeIdx = 0;
-
-//
 // Globals to track storage usage
 //
 UINT32 s_VolatileSize = 0;
@@ -83,26 +77,8 @@ UINT32 s_NonVolatileSize = 0;
 const GUID GUID_NULL = { 0, 0, 0,{ 0, 0, 0, 0, 0, 0, 0, 0 } };
 
 //
-// Helper function prototype(s)
+// Prototype(s)
 //
-
-static
-TEE_Result
-NvCreateVariable(
-    PUEFI_VARIABLE  Var     // IN
-);
-
-static
-TEE_Result
-NvUpdateVariable(
-    PUEFI_VARIABLE  Var     // IN
-);
-
-static
-TEE_Result
-NvDeleteVariable(
-    PUEFI_VARIABLE  Var     // IN
-);
 
 static
 BOOLEAN
@@ -112,7 +88,6 @@ CompareEntries(
     PUEFI_VARIABLE       Var        // IN
 );
 
-static
 BOOLEAN
 GetVariableType(
     PCWSTR      VarName,            // IN
@@ -128,18 +103,6 @@ IsSecureBootVar(
     PCGUID  VendorGuid              // IN
 );
 
-static
-TEE_Result
-NvOpenVariable(
-    AUTHVAR_META *VarMeta
-);
-
-static
-VOID
-NvCloseVariable(
-    AUTHVAR_META *VarMeta
-);
-
 #ifdef AUTHVAR_DEBUG
 static
 VOID
@@ -148,242 +111,6 @@ AuthVarDumpVarList(
 );
 #endif
 
-//
-// Auth Var storage (de-)init functions
-//
-
-TEE_Result
-AuthVarInitStorage(
-    VOID
-)
-/*++
-
-    Routine Description:
-
-        Gather persistent objects (i.e., variables) from storage
-
-    Arguments:
-
-        None
-
-    Returns:
-
-    TEE_Result
-
---*/
-{
-    TEE_ObjectInfo  objInfo;
-    PUEFI_VARIABLE  pVar;
-    PWCHAR          name;
-    PCGUID          guid;
-    ATTRIBUTES      attrib;
-    UINT32          size;
-    UINT32          objIDLen;
-    VARTYPE         varType;
-    TEE_Result      status;
-    USHORT          i;
-
-    // Initialize variable lists
-    for(varType = 0; varType < VTYPE_END; varType++ )
-    {
-        DMSG("Initializing list %d", varType);
-        InitializeListHead(&VarInfo[varType].Head);
-    }
-
-    // Allocate object enumerator
-    status = TEE_AllocatePersistentObjectEnumerator(&AuthVarEnumerator);
-    if (status != TEE_SUCCESS)
-    {
-        DMSG("Failed to create enumerator: 0x%x", status);
-        goto Cleanup;
-    }
-
-    // Start object enumerator
-    status = TEE_StartPersistentObjectEnumerator(AuthVarEnumerator, TEE_STORAGE_PRIVATE);
-    if (status != TEE_SUCCESS)
-    {
-        DMSG("Failed to start enumerator: 0x%x", status);
-        // On first run there will be no objects in storage, this is expected.
-        if (status == TEE_ERROR_ITEM_NOT_FOUND)
-        {
-            DMSG("No stored variables found");
-            status = TEE_SUCCESS;
-        }
-        goto Cleanup;
-    }
-
-    // Init index
-    i = 0;
-
-    // Iterate over persistent objects
-    status = TEE_GetNextPersistentObject(AuthVarEnumerator,
-                                         &objInfo,
-                                         &(VarList[i].ObjectID),
-                                         &objIDLen);
-    // Gather all available objects
-    while ((status == TEE_SUCCESS) && (i < MAX_AUTHVAR_ENTRIES))
-    {
-        // Allocate space for this var
-        if (!(pVar = TEE_Malloc(objInfo.dataSize, TEE_USER_MEM_HINT_NO_FILL_ZERO)))
-        {
-            status = TEE_ERROR_OUT_OF_MEMORY;
-            EMSG("Failed alloc AuthVarInit");
-            goto Cleanup;
-        }
-
-        if(s_NonVolatileSize + objInfo.dataSize > MAX_NV_STORAGE)
-        {
-            status = TEE_ERROR_OUT_OF_MEMORY;
-            EMSG("Failed AuthVarInit: Exceeds non-volatile variable max allocation.");
-            goto Cleanup;
-        }
-
-        s_NonVolatileSize += objInfo.dataSize;
-
-        if (NvOpenVariable(&VarList[i]) != TEE_SUCCESS) {
-            EMSG("Failed to open NV handle");
-            TEE_Panic(status);
-        }
-
-        // Read object
-        status = TEE_ReadObjectData(VarList[i].ObjectHandle,
-                                    (PVOID)pVar,
-                                    objInfo.dataSize,
-                                    &size);
-
-        NvCloseVariable(&VarList[i]);
-
-        // Sanity check size
-        if (objInfo.dataSize != size)
-        {
-            TEE_Panic(TEE_ERROR_BAD_STATE);
-        }
-
-        // Init UEFI_VARIABLE fields and pick up pointers
-        VarList[i].Var = pVar;
-        pVar->BaseAddress = (UINT_PTR)pVar;
-        pVar->MetaIndex = i;
-        name = (PWCHAR)(pVar->BaseAddress + pVar->NameOffset);
-        guid = &pVar->VendorGuid;
-        attrib.Flags = pVar->Attributes.Flags;
-
-        // Get var type and add to appropriate list
-        GetVariableType(name, guid, attrib, &varType);
-        InsertTailList(&VarInfo[varType].Head, &pVar->List);
-
-        // Done, bump index
-        i++;
-
-        // Attempt to get another object
-        status = TEE_GetNextPersistentObject(AuthVarEnumerator,
-                                             &objInfo,
-                                             &(VarList[i].ObjectID),
-                                             &objIDLen);
-    }
-
-    // Validate status from TEE_GetNextPersistentObject
-    if (status != TEE_ERROR_ITEM_NOT_FOUND)
-    {
-        // The only non-fatal status out of "get next" is ITEM_NOT_FOUND
-        TEE_Panic(status);
-    }
-
-    // Ensure we don't exceed max object count
-    if (i >= MAX_AUTHVAR_ENTRIES)
-    {
-        TEE_Panic(TEE_ERROR_BAD_STATE);
-    }
-
-    // Done, populate next free index and return
-    NextFreeIdx = i;
-    status = TEE_SUCCESS;
-
-Cleanup:
-    // Free enumerator, if necessary
-    if (IS_VALID(AuthVarEnumerator))
-    {
-        TEE_FreePersistentObjectEnumerator(AuthVarEnumerator);
-    }
-
-    return status;
-}
-
-TEE_Result
-AuthVarCloseStorage(
-    VOID
-)
-/*++
-
-    Routine Description:
-
-        Close out persistent object handles for NV variables
-
-    Arguments:
-
-        None
-
-    Returns:
-
-        TEE_Result
-
---*/
-{
-    // TODO: This
-    return TEE_SUCCESS;
-}
-
-TEE_Result
-NvOpenVariable(
-    AUTHVAR_META *VarMeta
-)
-/*++
-
-    Routine Description:
-
-        Open a handle for updating a non-volatile variable
-
-    Arguments:
-
-        Address of the variable meta data
-
-    Returns:
-
-        TEE_Result
-
---*/
-{
-    // Open object
-    FMSG("Opening NV handle");
-    return TEE_OpenPersistentObject(TEE_STORAGE_PRIVATE,
-                                        &(VarMeta->ObjectID),
-                                        sizeof(VarMeta->ObjectID),
-                                        TA_STORAGE_FLAGS,
-                                        &(VarMeta->ObjectHandle));
-}
-
-VOID
-NvCloseVariable(
-    AUTHVAR_META *VarMeta
-)
-/*++
-
-    Routine Description:
-
-        Close a handle after updating a non-volatile variable
-
-    Arguments:
-
-        Address of the variable meta data
-
-    Returns:
-
-        None
-
---*/
-{
-    FMSG("Closing NV handle");
-    TEE_CloseObject(VarMeta->ObjectHandle);
-}
 
 //
 // Auth Var Mgmt Functions
@@ -424,7 +151,7 @@ SearchList(
     // Validate parameters
     if (!(UnicodeName) || !(VendorGuid) || !(Var) || !(VarType))
     {
-        DMSG("Invalid search parameters");
+        VAR_MSG("Invalid search parameters");
         return;
     }
 
@@ -496,7 +223,7 @@ CreateVariable(
     // First, is this a volatile variable?
     if (!(Attributes.NonVolatile))
     {
-        DMSG("Creating volatile variable");
+        VAR_MSG("Creating volatile variable");
         
         // Validate length
         if (DataSize == 0)
@@ -505,7 +232,7 @@ CreateVariable(
             //       to create a var with zero DataSize. But I guess we'll cross 
             //       that bridge when we come to it.
             status = TEE_ERROR_BAD_PARAMETERS;
-            EMSG("Create volatile variable error: Bad parameters.");
+            VAR_MSG("Create volatile variable error: Bad parameters.");
             goto Cleanup;
         }
 
@@ -516,7 +243,7 @@ CreateVariable(
         if(s_VolatileSize + requiredSize > MAX_VOLATILE_STORAGE)
         {
             status = TEE_ERROR_OUT_OF_MEMORY;
-            EMSG("Create volatile variable error: Exceeds volatile variable max allocation.");
+            VAR_MSG("Create volatile variable error: Exceeds volatile variable max allocation.");
             goto Cleanup;
         }
 
@@ -524,7 +251,7 @@ CreateVariable(
         if (!(newVar = TEE_Malloc(sizeof(UEFI_VARIABLE), TEE_USER_MEM_HINT_NO_FILL_ZERO)))
         {
             status = TEE_ERROR_OUT_OF_MEMORY;
-            EMSG("Create volatile variable error: Out of memory.");
+            VAR_MSG("Create volatile variable error: Out of memory.");
             goto Cleanup;
         }
 
@@ -533,7 +260,7 @@ CreateVariable(
         {
             TEE_Free(newVar);
             status = TEE_ERROR_OUT_OF_MEMORY;
-            EMSG("Create volatile variable error: Out of memory.");
+            VAR_MSG("Create volatile variable error: Out of memory.");
             goto Cleanup;
         }
 
@@ -543,7 +270,7 @@ CreateVariable(
             TEE_Free(newVar);
             TEE_Free(newStr);
             status = TEE_ERROR_OUT_OF_MEMORY;
-            EMSG("Create volatile variable error: Out of memory.");
+            VAR_MSG("Create volatile variable error: Out of memory.");
             goto Cleanup;
         }
 
@@ -584,13 +311,13 @@ CreateVariable(
     else
     {
         // Nope, create new non-volatile variable.
-        DMSG("Creating non-volatile variable");
+        VAR_MSG("Creating non-volatile variable");
 
         // Which list is this variable destined for?
         if (!GetVariableType(UnicodeName->Buffer, VendorGuid, Attributes, &varType))
         {
             status = TEE_ERROR_BAD_PARAMETERS;
-            EMSG("Create non-volatile variable error: Bad parameters.");
+            VAR_MSG("Create non-volatile variable error: Bad parameters.");
             goto Cleanup;
         }
 
@@ -613,7 +340,7 @@ CreateVariable(
         if(s_NonVolatileSize + requiredSize > MAX_NV_STORAGE)
         {
             status = TEE_ERROR_OUT_OF_MEMORY;
-            EMSG("Create non-volatile variable error: Exceeds non-volatile variable max allocation.");
+            VAR_MSG("Create non-volatile variable error: Exceeds non-volatile variable max allocation.");
             goto Cleanup;
         }
 
@@ -724,7 +451,7 @@ RetrieveVariable(
     UINT32 requiredSize, length;
     TEE_Result status = TEE_SUCCESS;
 
-    DMSG("Getting data from variable at 0x%lx", (UINT_PTR)Var);
+    VAR_MSG("Getting data from variable at 0x%lx", (UINT_PTR)Var);
 
     // Detect integer overflow
     if (((UINT32)ResultBuf + ResultBufLen) < (UINT32)ResultBuf)
@@ -744,7 +471,7 @@ RetrieveVariable(
     {
         // This is a common error case, a buffer size of 0 is often passed
         // to check the required size.
-        DMSG("Retrieve variable error: result buffer too short.");
+        VAR_MSG("Retrieve variable error: result buffer too short.");
         status = TEE_ERROR_SHORT_BUFFER;
         goto Cleanup;
     }
@@ -758,7 +485,7 @@ Cleanup:
     if (BytesWritten) // or needed..
     {
         *BytesWritten = requiredSize + sizeof(VARIABLE_GET_RESULT);
-        DMSG("Required buffer size is 0x%x bytes", *BytesWritten);
+        VAR_MSG("Required buffer size is 0x%x bytes", *BytesWritten);
     }
 
     return status;
@@ -787,7 +514,7 @@ DeleteVariable(
     UINT32 varSize;
     TEE_Result status = TEE_SUCCESS;
 
-    DMSG("Deleting variable at 0x%lx", (UINT_PTR)Variable);
+    VAR_MSG("Deleting variable at 0x%lx", (UINT_PTR)Variable);
 
     // Calculate Variable size
     varSize = sizeof(UEFI_VARIABLE) + Variable->NameSize +
@@ -804,7 +531,7 @@ DeleteVariable(
 
         s_VolatileSize -= varSize;
         if (s_VolatileSize > MAX_VOLATILE_STORAGE) {
-            EMSG("Volatile variable size underflow!");
+            VAR_MSG("Volatile variable size underflow!");
             TEE_Panic(TEE_ERROR_BAD_STATE);
         }
     } else {
@@ -816,7 +543,7 @@ DeleteVariable(
         }
         s_NonVolatileSize -= varSize;
         if (s_NonVolatileSize > MAX_NV_STORAGE) {
-            EMSG("Non-volatile variable size underflow!");
+            VAR_MSG("Non-volatile variable size underflow!");
             TEE_Panic(TEE_ERROR_BAD_STATE);
         }
     }
@@ -864,7 +591,7 @@ AppendVariable(
     UINT32 varSize, newSize, extAttribLen;
     TEE_Result  status = TEE_SUCCESS;
     VARTYPE varType;
-    DMSG("Appending to variable at 0x%lx", (UINT_PTR)Var);
+    VAR_MSG("Appending to variable at 0x%lx", (UINT_PTR)Var);
 
     // First, is this a volatile variable?
     if (!(Attributes.NonVolatile))
@@ -876,7 +603,7 @@ AppendVariable(
         // Check overflow on data size
         if ((Var->DataSize + DataSize) < (Var->DataSize))
         {
-            EMSG("append error: Overflow on data length");
+            VAR_MSG("append error: Overflow on data length");
             status = TEE_ERROR_BAD_PARAMETERS;
             goto Cleanup;
         }
@@ -887,7 +614,7 @@ AppendVariable(
         // Check if there is enough volatile memory "quota"
         if((s_VolatileSize + DataSize) > MAX_VOLATILE_STORAGE)
         {
-            EMSG("Volatile append error: Exceeds volatile variable max allocation.");
+            VAR_MSG("Volatile append error: Exceeds volatile variable max allocation.");
             status = TEE_ERROR_OUT_OF_MEMORY;            
             goto Cleanup;
         }
@@ -895,7 +622,7 @@ AppendVariable(
         // Attempt allocation
         if (!(dstPtr = TEE_Realloc(Var->DataOffset, newSize)))
         {
-            EMSG("Volatile append error: out of memory");
+            VAR_MSG("Volatile append error: out of memory");
             status = TEE_ERROR_OUT_OF_MEMORY;
             goto Cleanup;
         }
@@ -938,7 +665,7 @@ AppendVariable(
         // Check if there is enough volatile memory "quota"
         if((s_NonVolatileSize + DataSize) > MAX_NV_STORAGE)
         {
-            EMSG("Non-volatile append error: Exceeds non-volatile variable max allocation.");
+            VAR_MSG("Non-volatile append error: Exceeds non-volatile variable max allocation.");
             status = TEE_ERROR_OUT_OF_MEMORY;
             goto Cleanup;
         }
@@ -948,7 +675,7 @@ AppendVariable(
         RemoveEntryList(&Var->List);
         if (!(newVar = TEE_Realloc(Var, newSize)))
         {
-            EMSG("non-volatile append error: out of memory");
+            VAR_MSG("non-volatile append error: out of memory");
             status = TEE_ERROR_OUT_OF_MEMORY;
             goto Cleanup;
         }
@@ -1031,7 +758,7 @@ ReplaceVariable(
     TEE_Result  status = TEE_SUCCESS;
     VARTYPE varType;
 
-    DMSG("Replacing variable at 0x%lx", (UINT_PTR)Var);
+    VAR_MSG("Replacing variable at 0x%lx", (UINT_PTR)Var);
 
     // First, is this a volatile variable?
     if (!(Attributes.NonVolatile))
@@ -1041,7 +768,7 @@ ReplaceVariable(
         // Yes. Make sure variable doesn't indicate APPEND_WRITE.
         if ((Attributes.AppendWrite))
         {
-            EMSG("Replace variable error: Bad parameters");
+            VAR_MSG("Replace variable error: Bad parameters");
             status = TEE_ERROR_BAD_PARAMETERS;
             goto Cleanup;
         }
@@ -1067,7 +794,7 @@ ReplaceVariable(
         // Realloc variable data
         if (!(dstPtr = TEE_Realloc(Var->DataOffset, DataSize)))
         {
-            EMSG("Volatile replace error: out of memory");
+            VAR_MSG("Volatile replace error: out of memory");
             status = TEE_ERROR_OUT_OF_MEMORY;
             goto Cleanup;
         }
@@ -1122,7 +849,7 @@ ReplaceVariable(
         RemoveEntryList(&Var->List);
         if (!(newVar = TEE_Realloc(Var, reqSize)))
         {
-            EMSG("Replace NON volatile variable error: Out of memory");
+            VAR_MSG("Replace NON volatile variable error: Out of memory");
             status = TEE_ERROR_OUT_OF_MEMORY;
             goto Cleanup;
         }
@@ -1205,12 +932,12 @@ QueryByAttribute(
 
     // Note that since we are not provided a (name,guid) for a query, we
     // cannot provide information on secureboot variable storage.
-    DMSG("Querying variables by attributes");
+    VAR_MSG("Querying variables by attributes");
 
     // Do we have enough to determine a valid type?
     if (!GetVariableType(NULL, NULL, Attributes, &varType))
     {
-        EMSG("Query by attributes error: bad attributes");
+        VAR_MSG("Query by attributes error: bad attributes");
         return;
     }
 
@@ -1288,262 +1015,6 @@ QueryByAttribute(
 //
 
 static
-BOOL
-AuthVarNextFreeIdx(
-    USHORT *    index       // OUT
-)
-{
-    USHORT i;
-
-    // Parameter validation
-    if (!index)
-    {
-        return FALSE;
-    }
-
-    // Find first free variable index
-    for (i = 0; i < MAX_AUTHVAR_ENTRIES; i++)
-    {
-        if (!(VarList[i].ObjectID))
-        {
-            break;
-        }
-    }
-
-    // Yes, MAX_AUTHVAR_ENTRIES can result from calling this
-    // function. This means we're maxed out..
-    *index = i;
-    return TRUE;
-}
-
-static
-TEE_Result
-NvCreateVariable(
-    PUEFI_VARIABLE  Var     // IN
-)
-{
-    UINT64 qHash[TEE_DIGEST_QWORDS];
-    PVOID namePtr;
-    TEE_OperationHandle opHandle;
-    UINT32 length, dataSize;
-    TEE_Result status;
-    USHORT i;
-
-    // Parameter validation
-    if (!Var)
-    {
-        status = TEE_ERROR_BAD_PARAMETERS;
-        goto Cleanup;
-    }
-
-    // Use next free and sanity check
-    i = NextFreeIdx;
-    if (i >= (MAX_AUTHVAR_ENTRIES))
-    {
-        status = TEE_ERROR_OUT_OF_MEMORY;
-        goto Cleanup;
-    }
-
-    // Calculate total size needed to store this variable
-    dataSize = sizeof(UEFI_VARIABLE) + Var->NameSize + Var->ExtAttribSize + Var->DataSize;
-
-    // Init for hash operation
-    opHandle = TEE_HANDLE_NULL;
-    length = TEE_SHA256_HASH_SIZE;
-
-    // Generate a unique ObjectID for this object based on GUID + name.
-    // REVISIT: In the unlikely event of a collision, fail the create operation.
-    status = TEE_AllocateOperation(&opHandle, TEE_ALG_SHA256, TEE_MODE_DIGEST, 0);
-    if (status != TEE_SUCCESS)
-    {
-        DMSG("Failed to allocate digest operation");
-        goto Cleanup;
-    }
-
-    // Include VendorGuid first
-    TEE_DigestUpdate(opHandle, &(Var->VendorGuid), sizeof(Var->VendorGuid));
-
-    // Then name, finalizing hash
-    namePtr = (PVOID)(Var->BaseAddress + Var->NameOffset);
-    status = TEE_DigestDoFinal(opHandle, namePtr, Var->NameSize, (PVOID)qHash, &length);
-    if (status != TEE_SUCCESS)
-    {
-        DMSG("Failed to finalize digest operation");
-        goto Cleanup;
-    }
-
-    // Assumes TEE_OBJECT_ID_MAX_LEN == 64!
-    VarList[i].ObjectID = qHash[0];
-    
-    // Attempt to create an object for this var
-    status = TEE_CreatePersistentObject(TEE_STORAGE_PRIVATE,
-                                        (PVOID)&(VarList[i].ObjectID),
-                                        sizeof(VarList[i].ObjectID),
-                                        TA_STORAGE_FLAGS, NULL,
-                                        (PVOID)Var, dataSize,
-                                        &(VarList[i].ObjectHandle));
-    // Successful creation?
-    if (status != TEE_SUCCESS)
-    {
-        // REVISIT: This really shouldn't be a panic long-term.
-        if (status == TEE_ERROR_ACCESS_CONFLICT)
-        {
-            EMSG("Collision on ObjectID, duplicate (GUID, Name)?");
-            TEE_Panic(TEE_ERROR_ACCESS_CONFLICT);
-        }
-
-        // Other unexpected error
-        EMSG("Failed to create persistent object with error 0x%x", status);
-        goto Cleanup;
-    }
-
-    // Write out this variable
-    status = TEE_WriteObjectData(VarList[i].ObjectHandle, (PVOID)Var, dataSize);
-    if (status != TEE_SUCCESS)
-    {
-        EMSG("Failed to write object");
-        goto Cleanup;
-    }
-
-    // Link to new var
-    VarList[i].Var = Var;
-    Var->MetaIndex = i;
-
-    // Update next free index
-    AuthVarNextFreeIdx(&NextFreeIdx);
-
-    NvCloseVariable(&VarList[i]);
-
-    // Success, return
-    status = TEE_SUCCESS;
-
-Cleanup:
-    if(IS_VALID(opHandle))
-    {
-        TEE_FreeOperation(opHandle);
-    }
-    return status;
-}
-
-static
-TEE_Result
-NvUpdateVariable(
-    PUEFI_VARIABLE  Var     // IN
-)
-{
-    UINT32      newSize;
-    TEE_Result  status;
-    USHORT      i;
-
-    // Validate parameters
-    if (!Var)
-    {
-        status = TEE_ERROR_BAD_PARAMETERS;
-        goto Cleanup;
-    }
-
-    // Pickup index into metadata
-    i = Var->MetaIndex;
-
-    // Make sure the metadata still points to the correct address
-    // incase a realloc moved the variable.
-    VarList[i].Var = Var;
-    
-    // Calculate new size of persistent object
-    newSize = sizeof(UEFI_VARIABLE) + Var->NameSize + Var->ExtAttribSize + Var->DataSize;
-
-    if (NvOpenVariable(&VarList[i]) != TEE_SUCCESS) {
-        EMSG("Failed to open NV handle");
-        TEE_Panic(status);
-    }
-
-    // Reset data position for object
-    status = TEE_SeekObjectData(VarList[i].ObjectHandle, 0, TEE_DATA_SEEK_SET);
-    if (status != TEE_SUCCESS)
-    {
-        goto Cleanup;
-    }
-
-    // Resize persistent object
-    status = TEE_TruncateObjectData(VarList[i].ObjectHandle, newSize);
-    if (status != TEE_SUCCESS)
-    {
-        goto Cleanup;
-    }
-
-    // Write object data
-    status = TEE_WriteObjectData(VarList[i].ObjectHandle, Var, newSize);
-    if (status != TEE_SUCCESS)
-    {
-        goto Cleanup;
-    }
-
-    NvCloseVariable(&VarList[i]);
-
-    // Success, return
-    status = TEE_SUCCESS;
-Cleanup:
-    return status;
-}
-
-static
-TEE_Result
-NvDeleteVariable(
-    PUEFI_VARIABLE  Var     // IN
-)
-{
-    TEE_Result  status;
-    USHORT      i;
-
-    // Validate parameters
-    if (!Var)
-    {
-        status = TEE_ERROR_BAD_PARAMETERS;
-        goto Cleanup;
-    }
-
-    // Pickup index into VarList
-    i = Var->MetaIndex;
-
-    // Sanity check metadata
-    if (Var != VarList[i].Var)
-    {
-        TEE_Panic(TEE_ERROR_BAD_STATE);
-    }
-
-    if (NvOpenVariable(&VarList[i]) != TEE_SUCCESS) {
-        EMSG("Failed to open NV handle");
-        TEE_Panic(status);
-    }
-
-    // Close and delete backing object
-    status = TEE_CloseAndDeletePersistentObject1(VarList[i].ObjectHandle);
-    if (status != TEE_SUCCESS)
-    {
-        goto Cleanup;
-    }
-
-    // Free in-memory variable
-    TEE_Free(VarList[i].Var);
-    VarList[i].Var = NULL;
-    VarList[i].ObjectID = 0;
-
-    // Clear metadata
-    memset(&(VarList[i]), 0, sizeof(AUTHVAR_META));
-
-    // If necessary, update next free
-    if (i < NextFreeIdx)
-    {
-        NextFreeIdx = i;
-    }
-
-    // Success, return
-    status = TEE_SUCCESS;
-Cleanup:
-    return status;
-}
-
-static
 BOOLEAN
 CompareEntries(
     PCUNICODE_STRING     Name,      // IN
@@ -1591,7 +1062,6 @@ CompareEntries(
     return retVal;
 }
 
-static
 BOOLEAN
 GetVariableType(
     PCWSTR      VarName,        // IN

@@ -848,7 +848,7 @@ PopulateCerts(
         }
     }
 
-    DMSG("Finished counting certs. Count1 = %u, Count2 = %u", PKcount, KEKcount);
+    VAR_MSG("Finished counting certs. Count1 = %u, Count2 = %u", PKcount, KEKcount);
     certs = TEE_Malloc(sizeof(CRYPT_DATA_BLOB) * (PKcount + KEKcount), TEE_MALLOC_FILL_ZERO);
     if (!certs)
     {
@@ -857,13 +857,13 @@ PopulateCerts(
     }
 
     // Now do the allocs
-    DMSG("Now populating certs");
+    VAR_MSG("Now populating certs");
     totalParsed = PKcount;
 
     status = ParseSecurebootVariable(PKvar->Data, PKsize, ParseOpX509, certs, &totalParsed);
     if (status != TEE_SUCCESS)
     {
-        DMSG("here");
+        VAR_MSG("here");
         goto Cleanup;
     }
 
@@ -882,7 +882,7 @@ PopulateCerts(
         status = ParseSecurebootVariable(KEKvar->Data, KEKsize, ParseOpX509, &certs[PKcount], &totalParsed);
         if (status != TEE_SUCCESS)
         {
-            DMSG("here");
+            VAR_MSG("here");
             goto Cleanup;
         }
 
@@ -897,7 +897,7 @@ PopulateCerts(
 
     *Certs = certs;
     *CertCount = PKcount + KEKcount;
-    DMSG("NumberOfCerts: %x", CertCount);
+    VAR_MSG("NumberOfCerts: %x", CertCount);
 
 Cleanup:
     TEE_Free(PKvar);
@@ -965,7 +965,7 @@ ParseSecurebootVariable(
     // Validate size
     if (DataSize < sizeof(EFI_SIGNATURE_LIST))
     {
-        DMSG("here");
+        VAR_MSG("here");
         status = TEE_ERROR_BAD_PARAMETERS;
         goto Cleanup;
     }
@@ -978,13 +978,13 @@ ParseSecurebootVariable(
     sigListIndex = (PBYTE)((UINT_PTR)authPtr + sigListOffset);
     sigListLimit = Data + DataSize;
 
-    DMSG("DATA: %x DATASIZE: %x", Data, DataSize);
-    DMSG("slO: %x slI: %x slL: %x", sigListOffset, sigListIndex, sigListLimit);
+    VAR_MSG("DATA: %x DATASIZE: %x", Data, DataSize);
+    VAR_MSG("slO: %x slI: %x slL: %x", sigListOffset, sigListIndex, sigListLimit);
 
     // Integer overflow check
     if ((UINT_PTR)sigListLimit <= (UINT_PTR)Data)
     {
-        DMSG("here");
+        VAR_MSG("here");
         status = TEE_ERROR_BAD_PARAMETERS;
         goto Cleanup;
     }
@@ -998,16 +998,16 @@ ParseSecurebootVariable(
         doAlloc = FALSE;
         signatureList = (EFI_SIGNATURE_LIST*)sigListIndex;
 
-        DMSG("slO: %x slI: %x slL: %x", sigListOffset, sigListIndex, sigListLimit);
+        VAR_MSG("slO: %x slI: %x slL: %x", sigListOffset, sigListIndex, sigListLimit);
 
         // Sanity check signature list
         status = CheckSignatureList(signatureList, sigListLimit, &listEntries);
         if (status != TEE_SUCCESS)
         {
-            DMSG("here");
+            VAR_MSG("here");
             goto Cleanup;
         }
-        DMSG("listEntries: %x", listEntries);
+        VAR_MSG("listEntries: %x", listEntries);
 
         if (Op == ParseOpAll)
         {
@@ -1023,14 +1023,14 @@ ParseSecurebootVariable(
                 certCount += listEntries;
                 certSize = signatureList->SignatureSize - sizeof(EFI_SIGNATURE_DATA);
                 firstCert = (PBYTE)signatureList + sizeof(EFI_SIGNATURE_LIST) + sizeof(EFI_SIGNATURE_DATA);
-                DMSG("here");
+                VAR_MSG("here");
                 doAlloc = TRUE;
             }
         }
         else
         {
             // Bad Op value
-            DMSG("here");
+            VAR_MSG("here");
             status = TEE_ERROR_BAD_PARAMETERS;
             goto Cleanup;
         }
@@ -1054,7 +1054,7 @@ ParseSecurebootVariable(
                 // Sanity check
                 if (index >= *CertCount)
                 {
-                    DMSG("here");
+                    VAR_MSG("here");
                     status = TEE_ERROR_BAD_PARAMETERS;
                     goto Cleanup;
                 }
@@ -1062,7 +1062,7 @@ ParseSecurebootVariable(
                 // Alloc for cert (openssl)
                 if (!(crtPtr = TEE_Malloc(certSize, TEE_USER_MEM_HINT_NO_FILL_ZERO)))
                 {
-                    DMSG("out of memory size: %x", certSize);
+                    VAR_MSG("out of memory size: %x", certSize);
                     status = TEE_ERROR_OUT_OF_MEMORY;
                     goto Cleanup;
                 }
@@ -1081,7 +1081,7 @@ ParseSecurebootVariable(
     // Index/limit mismatch?
     if (sigListIndex != sigListLimit)
     {
-        DMSG("here");
+        VAR_MSG("here");
         status = TEE_ERROR_BAD_PARAMETERS;
         goto Cleanup;
     }

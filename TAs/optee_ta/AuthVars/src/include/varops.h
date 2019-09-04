@@ -188,6 +188,15 @@ extern const GUID EfiSecurityDatabaseGUID;  // EFI GUID
 extern VTYPE_INFO VarInfo[VTYPE_END];       // Variable storage
 
 //
+// Debug output
+//
+#ifndef AUTHVAR_DEBUG
+#define VAR_MSG(...) (void)0
+#else
+#define VAR_MSG(...) DMSG(__VA_ARGS__)
+#endif
+
+//
 // Variable operation prototypes
 //
 TEE_Result

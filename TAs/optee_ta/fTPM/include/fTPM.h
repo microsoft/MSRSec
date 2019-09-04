@@ -62,7 +62,7 @@
 //
 // Shorthand for TA functions taking uniform arg types
 //
-#define TA_ALL_PARAM_TYPE(a) TEE_PARAM_TYPES((a), (a), (a), (a))
+#define TA_ALL_PARAM_TYPE(a)    TEE_PARAM_TYPES((a), (a), (a), (a))
 
 //
 // Used to extract size field from TPM command buffers
@@ -71,6 +71,20 @@
                                             + ((b)[1] << 16) \
                                             + ((b)[2] << 8 ) \
                                             +  (b)[3])
+//
+// Successful return value from _plat__NVEnable
+//
+#define TA_NV_AVAILABLE         (0)
+
+//
+// Debug output
+//
+#ifndef fTPMDebug
+#define FTPM_MSG(...) (void)0
+#else
+#define FTPM_MSG(...) DMSG(__VA_ARGS__)
+#endif
+
 //
 // Entrypoint for reference implemntation
 //
@@ -101,8 +115,9 @@ typedef union {
         uint32_t Remanufacture : 1;   // Perform a TPM_Remanufacture() on startup (SET by default)
         uint32_t TpmStatePresent : 1; // Init TPM and NV with contents of TpmState and NVState on startup
         uint32_t Reserved : 30;
-    }        fields;
+    } fields;
 } TPM_CHIP_STATE;
 
 extern TPM_CHIP_STATE g_chipFlags;
+
 #endif /* FTPM_TA_H */

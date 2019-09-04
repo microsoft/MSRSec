@@ -72,8 +72,8 @@ _plat__GetUnique(
     // Check if we've initialized our unique platform value.
     if (!initializedUniqueValue) {
         teeResult = TEE_GetPropertyAsUUID(TEE_PROPSET_TEE_IMPLEMENTATION,
-                                       "gpd.tee.deviceID",
-                                       (TEE_UUID*)&deviceUniqueValue);
+                                          "gpd.tee.deviceID",
+                                         (TEE_UUID*)&deviceUniqueValue);
         assert(teeResult == TEE_SUCCESS);
     }
     deviceUniqueValue[uSize-1] = '\0';

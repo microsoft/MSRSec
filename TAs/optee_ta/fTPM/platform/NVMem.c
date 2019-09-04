@@ -48,22 +48,6 @@
 #include <tee_internal_api.h>
 #include <tee_internal_api_extensions.h>
 
-// Used to translate nv offset to block map offset
-#define NV_INDEX_MASK       (0xC0UL)
-#define NV_BLOCK_MASK       (0x3FUL)
-
-//
-// For cleaner descriptor validation
-//
-#define IS_VALID(a) ((a) != (TEE_HANDLE_NULL))
-
-//
-// Storage flags
-//
-#define TA_STORAGE_FLAGS (TEE_DATA_FLAG_ACCESS_READ  | \
-                          TEE_DATA_FLAG_ACCESS_WRITE | \
-                          TEE_DATA_FLAG_ACCESS_WRITE_META)
-
 //
 // The base Object ID for fTPM storage
 //
@@ -81,20 +65,10 @@ static bool s_blockMap[NV_BLOCK_COUNT] = { 0 };
 static bool s_dirty = TRUE;
 
 //
-// Shortcut for 'dirty'ing all NV blocks.
-//
-#define NV_DIRTY_ALL(x)                     \
-{                                           \
-s_dirty = TRUE;                             \
-for (int i = 0; i < NV_BLOCK_COUNT; i++) \
-    x[i] = (TRUE);                     \
-}
-
-//
 // NV state
 //
-static BOOL  s_NVChipFileNeedsManufacture = FALSE;
-static BOOL  s_NVInitialized = FALSE;
+static BOOL  s_NVInitialized = FALSE;               // Storage is present/ready
+static BOOL  s_NVChipFileNeedsManufacture = FALSE;  // Need to (re-)init TPM
 
 //
 // Firmware revision
@@ -107,12 +81,39 @@ static const UINT32 firmwareV2 = FIRMWARE_V2;
 //
 static UINT64 s_chipRevision = 0;
 
+//
+// Used to translate nv offset to block map offset
+//
+#define NV_INDEX_MASK       (0xC0UL)
+#define NV_BLOCK_MASK       (0x3FUL)
+
+//
+// For cleaner descriptor validation
+//
+#define IS_VALID(a) ((a) != (TEE_HANDLE_NULL))
+
+//
+// Storage flags
+//
+#define TA_STORAGE_FLAGS (TEE_DATA_FLAG_ACCESS_READ  | \
+                          TEE_DATA_FLAG_ACCESS_WRITE | \
+                          TEE_DATA_FLAG_ACCESS_WRITE_META)
+
+//
+// Shortcut for 'dirty'ing all NV blocks.
+//
+#define NV_DIRTY_ALL(x)                     \
+{                                           \
+s_dirty = TRUE;                             \
+for (int i = 0; i < NV_BLOCK_COUNT; i++) \
+    x[i] = (TRUE);                     \
+}
+
+
 VOID
 _plat__NvInitFromStorage()
 {
-	DMSG("_plat__NvInitFromStorage()");
 	UINT32 i;
-	BOOL initialized;
 	UINT32 objID;
 	UINT32 bytesRead;
 	TEE_Result Result;
@@ -122,15 +123,9 @@ _plat__NvInitFromStorage()
 		return;
 	}
 
-	//
-	// If the NV file is successfully read from the storage then
-	// initialized must be set. We are setting initialized to true
-	// here but if an error is encountered reading the NV file it will
-	// be reset.
-	//
-
-	initialized = TRUE;
-
+    // Clear error qualifiers
+    s_NV_unrecoverable = FALSE;
+    s_NV_recoverable = FALSE;
 
 	// Collect storage objects and init NV.
 	for (i = 0; i < NV_BLOCK_COUNT; i++) {
@@ -138,7 +133,7 @@ _plat__NvInitFromStorage()
 		// Form storage object ID for this block.
 		objID = s_StorageObjectID + i;
 
-		DMSG("fTPM:Opening block %d of %d", i, NV_BLOCK_COUNT);
+		DMSG("fTPM: Opening block %d of %d", i, NV_BLOCK_COUNT);
 
 		// Attempt to open TEE persistent storage object.
 		Result = TEE_OpenPersistentObject(TEE_STORAGE_PRIVATE,
@@ -150,11 +145,24 @@ _plat__NvInitFromStorage()
 		// If the open failed, try to create this storage object.
 		if (Result != TEE_SUCCESS) {
 
-			// There was an error, fail the init, NVEnable can retry.
-			if (Result != TEE_ERROR_ITEM_NOT_FOUND) {
-				DMSG("fTPM: Failed to open fTPM storage object %d", i);
-				goto Error;
-			}
+            // Handle errors other than object not found
+            if (Result != TEE_ERROR_ITEM_NOT_FOUND)
+            {
+                // Could we be successful on a retry?
+                if ((Result == TEE_ERROR_STORAGE_NOT_AVAILABLE) ||
+                    (Result == TEE_ERROR_OUT_OF_MEMORY))
+                {
+                    // Yes, set/clear (un)recoverable
+                    s_NV_unrecoverable = FALSE;
+                    s_NV_recoverable = TRUE;
+                    goto Error;
+                }
+
+                // No, unexpected condition
+                s_NV_unrecoverable = TRUE;
+                s_NV_recoverable = FALSE;
+                goto Error;
+            }
 
 			DMSG("fTPM: block %d not found, creating", i);
 
@@ -168,11 +176,26 @@ _plat__NvInitFromStorage()
 										        NV_BLOCK_SIZE,
 										        &s_NVStore[i]);
 
-			// There was an error, fail the init, NVEnable can retry.
-			if (Result != TEE_SUCCESS) {
-				DMSG("Failed to create fTPM storage object");
-				goto Error;
-			}
+			// If there was an error, fail the init, NVEnable may retry
+            if (Result != TEE_SUCCESS) {
+                DMSG("Failed to create fTPM storage object");
+
+                // Might we be successful on a retry?
+                if ((Result == TEE_ERROR_STORAGE_NOT_AVAILABLE) ||
+                    (Result == TEE_ERROR_STORAGE_NO_SPACE) ||
+                    (Result == TEE_ERROR_OUT_OF_MEMORY))
+                {
+                    // Yes, set/clear (un)recoverable
+                    s_NV_unrecoverable = FALSE;
+                    s_NV_recoverable = TRUE;
+                    goto Error;
+                }
+
+                // No, unexpected fatal condition
+                s_NV_unrecoverable = TRUE;
+                s_NV_recoverable = FALSE;
+                goto Error;
+            }
 
 			// A clean storage object was created, we must (re)manufacture.
 			s_NVChipFileNeedsManufacture = TRUE;
@@ -180,15 +203,13 @@ _plat__NvInitFromStorage()
 			// To ensure NV is consistent, force a write back of all NV blocks
             NV_DIRTY_ALL(s_blockMap);
 
-			// Need to re-initialize
-			initialized = FALSE;
-
 			IMSG("Created fTPM storage object, i: 0x%x, s: 0x%x, id: 0x%x, h:0x%x\n",
 				i, NV_BLOCK_SIZE, objID, s_NVStore[i]);
 		}
 		else
         {
 			DMSG("fTPM: block %d loaded!", i);
+
 			// Successful open, now read fTPM storage object.
 			Result = TEE_ReadObjectData(s_NVStore[i],
 										(void *)&(s_NV[i * NV_BLOCK_SIZE]),
@@ -212,8 +233,14 @@ _plat__NvInitFromStorage()
 	s_chipRevision = ((((UINT64)firmwareV2) << 32) | (firmwareV1));
 	if ((s_chipRevision != *(UINT64*)&(s_NV[NV_CHIP_REVISION_OFFSET]))) {
 
+        DMSG("Failed to validate revision. Did we just (re)-init?");
+
 		// Failure to validate revision, re-init (only the TPM's NV memory)
 		memset(s_NV, 0, (NV_TPM_STORAGE_SIZE));
+
+        // Init with proper revision
+        s_chipRevision = ((((UINT64)firmwareV2) << 32) | (firmwareV1));
+        *(UINT64*)&(s_NV[NV_CHIP_REVISION_OFFSET]) = s_chipRevision;
 
         // Going to manufacture, ensure zero flags
         g_chipFlags.flags = 0;
@@ -224,27 +251,15 @@ _plat__NvInitFromStorage()
 		// Dirty the block map, we're going to re-init.
         _plat__MarkDirtyBlocks(0, (NV_TPM_STORAGE_SIZE));
 
-		// Init with proper revision
-		s_chipRevision = ((((UINT64)firmwareV2) << 32) | (firmwareV1));
-		*(UINT64*)&(s_NV[NV_CHIP_REVISION_OFFSET]) = s_chipRevision;
-
-		DMSG("Failed to validate revision. Did we just (re)-init?");
-
 		// Force (re)manufacture.
 		s_NVChipFileNeedsManufacture = TRUE;
-
-		// Need to re-initialize
-		initialized = FALSE;
-
-		return;
 	}
 
-	s_NVInitialized = initialized;
-
+    // Success
+	s_NVInitialized = TRUE;
 	return;
 
 Error:
-	s_NVInitialized = FALSE;
 	for (i = 0; i < NV_BLOCK_COUNT; i++) {
 		if (IS_VALID(s_NVStore[i])) {
 			TEE_CloseObject(s_NVStore[i]);
@@ -252,6 +267,8 @@ Error:
 		}
 	}
 
+    // Need to (re-)initialize
+    s_NVInitialized = FALSE;
 	return;
 }
 
@@ -274,7 +291,7 @@ _plat__NvWriteBack()
     for (i = 0; i < NV_BLOCK_COUNT; i++) {
 
         // Dirty block?
-        if ((s_blockMap[i] )) {
+        if ((s_blockMap[i])) {
 
 			// Form storage object ID for this block.
 			objID = s_StorageObjectID + i;
@@ -282,31 +299,13 @@ _plat__NvWriteBack()
 			// Move data position associated with handle to start of block.
             Result = TEE_SeekObjectData(s_NVStore[i], 0, TEE_DATA_SEEK_SET);
 			if (Result != TEE_SUCCESS) {
-				DMSG("e");
 				goto Error;
 			}
 
 			// Write out this block.
 			DMSG("Writing block at 0x%x back", &(s_NV[i * NV_BLOCK_SIZE]));
-            Result = TEE_WriteObjectData(s_NVStore[i],
-									     (void *)&(s_NV[i * NV_BLOCK_SIZE]),
-                                         NV_BLOCK_SIZE);
+            Result = TEE_WriteObjectData(s_NVStore[i], (void *)&(s_NV[i * NV_BLOCK_SIZE]), NV_BLOCK_SIZE);
 			if (Result != TEE_SUCCESS) {
-				DMSG("e");
-				goto Error;
-			}
-            
-			// Force storage stack to update its backing store
-            /*TEE_CloseObject(s_NVStore[i]);
-            
-            Result = TEE_OpenPersistentObject(TEE_STORAGE_PRIVATE,
-                                              (void *)&objID,
-                                              sizeof(objID),
-                                              TA_STORAGE_FLAGS,
-                                              &s_NVStore[i]);*/
-			// Success?
-			if (Result != TEE_SUCCESS) {
-				DMSG("e");
 				goto Error;
 			}
 
@@ -315,15 +314,13 @@ _plat__NvWriteBack()
         }
     }
 
-	s_dirty = FALSE;
     DMSG("Done writeback");
-
+	s_dirty = FALSE;
     return;
 
 Error:
 	// Error path.
 	DMSG("NV writeback failed, closing storage.");
-	s_NVInitialized = FALSE;
 	for (i = 0; i < NV_BLOCK_COUNT; i++) {
 		if (IS_VALID(s_NVStore[i])) {
 			TEE_CloseObject(s_NVStore[i]);
@@ -331,6 +328,8 @@ Error:
 		}
 	}
 
+    // Need to (re-)initialize
+    s_NVInitialized = FALSE;
 	return;
 }
 
@@ -341,42 +340,31 @@ _plat__NvNeedsManufacture()
     return s_NVChipFileNeedsManufacture;
 }
 
+
 //***_plat__NVEnable()
+//
 // Enable NV memory.
 //
-// This version just pulls in data from a file. In a real TPM, with NV on chip,
-// this function would verify the integrity of the saved context. If the NV
-// memory was not on chip but was in something like RPMB, the NV state would be
-// read in, decrypted and integrity checked.
+// Return Value:
+//  < 0  - Unrecoverable error, should panic
+//    0  - Success, state present
+//  > 0  - Recoverable error, should try again
 //
-// The recovery from an integrity failure depends on where the error occurred. It
-// it was in the state that is discarded by TPM Reset, then the error is
-// recoverable if the TPM is reset. Otherwise, the TPM must go into failure mode.
-// return type: int
-//      0           if success
-//      > 0         if receive recoverable error
-//      <0          if unrecoverable error
 LIB_EXPORT int
 _plat__NVEnable(
-    void            *platParameter  // IN: platform specific parameters
-	)
+    void    *platParameter
+)
 {
     UNREFERENCED_PARAMETER(platParameter);
-	DMSG("_plat__NVEnable()");
-
-
-    UINT32 retVal = 0;
-    UINT32 firmwareV1 = FIRMWARE_V1;
-    UINT32 firmwareV2 = FIRMWARE_V2;
 
     // Don't re-open the backing store.
     if (s_NVInitialized) {
         return 0;
     }
 
-	DMSG("s_NV is at 0x%x and is size 0x%x", (uint32_t)s_NV, NV_TOTAL_MEMORY_SIZE);
+    DMSG("s_NV is at 0x%x and is size 0x%x", (uint32_t)s_NV, NV_TOTAL_MEMORY_SIZE);
 
-	// Clear NV
+    // Clear NV
     memset(s_NV, 0, NV_TOTAL_MEMORY_SIZE);
 
     // Prepare for potential failure to retreieve NV from storage
@@ -386,52 +374,58 @@ _plat__NVEnable(
     // Pick up our NV memory.
     _plat__NvInitFromStorage();
 
+    //
+    // At this point one of the following will be true:
+    //
+    //  1. (s_NVInitialized == TRUE) && (s_NVChipFileNeedsManufacture == FALSE)
+    //          NORMAL SUCCESSFUL COMPLETION (normal boot, with tpm state)
+    //
+    //  2. (s_NVInitialized == TRUE) && (s_NVChipFileNeedsManufacture == TRUE)
+    //          SUCCESS BUT NEEDS MANUFACTURE ((re)init, start from scratch)
+    //
+    //  3. (s_NVInitialized == FALSE) && (s_NVChipFileNeedsManufacture == FALSE)
+    //          LOOK AT s_RECOVERABLE/s_UNRECOVERABLE (failure, may retry)
+    //
+    //  4. (s_NVInitialized == FALSE) && (s_NVChipFileNeedsManufacture == TRUE)
+    //          NOT EXPECTED (but ignored anyway, goto 3)
+    //
+
     // Were we successful?
-    if (!s_NVInitialized) {
-        // Arriving here means one of two things: Either there existed no
-        // NV state before we came along and we just (re)initialized our
-        // storage. Or there is an error condition preventing us from 
-        // accessing storage.  Check which is the case.
-        if (s_NVChipFileNeedsManufacture == FALSE) {
-            // This condition means we cannot access storage. However, it
-            // isn't up to the platform layer to decide what to do in this
-            // case. The decision to proceed is made in the fTPM init code
-            // in TA_CreateEntryPoint. Here, we're going to make sure that,
-            // should we decide not to just TEE_Panic, we can continue
-            // execution after (re)manufacture. Later an attempt at re-init
-            // can be made by calling _plat__NvInitFromStorage again.
-            retVal = 0;
+    if (s_NVInitialized)
+    {
+        // Yes, handle chip flags
+        if (!s_NVChipFileNeedsManufacture)
+        {
+            // We successfully initialized NV pickup TPM flags
+            _admin__RestoreChipFlags();
         }
-        else {
-            retVal = 1;
+        else
+        {
+            // Going to manufacture, zero flags
+            g_chipFlags.flags = 0;
+
+            // Save flags
+            _admin__SaveChipFlags();
         }
 
-        // Going to manufacture, zero flags
-        g_chipFlags.flags = 0;
-
-        // Save flags
-        _admin__SaveChipFlags();
-
-        // Now we're done
-        s_NVInitialized = TRUE;
-
-        return retVal;
-    }
-    else {
-        // In the transition out of UEFI to Windows, we may not tear down
-        // the TA. We close out one session and start another. This means
-        // our s_NVChipFileNeedsManufacture flag, if set, will be stale.
-        // Make sure we don't re-manufacture.
-        s_NVChipFileNeedsManufacture = FALSE;
-
-        // We successfully initialized NV now pickup TPM state.
-        _admin__RestoreChipFlags();
-
-		// Success
-		retVal = 1;
+        return 0;
     }
 
-    return retVal;
+    // Regardless of why storage is inaccessible, we should also ensure that
+    // there isn't an immediate attempt to startup-state or run without init.
+    s_NVChipFileNeedsManufacture = TRUE;
+    g_chipFlags.flags = 0;
+
+    // We were not successful, do we think this may be a recoverable error?
+    if (s_NV_recoverable && !s_NV_unrecoverable)
+    {
+        // Yes
+        return 1;
+    }
+
+    // Fatal error. And we don't expect that s_NVChipFileNeedsManufacture to
+    // be set in this case. And even if it were it would be ignored.
+    return -1;
 }
 
 //***_platNVDisable()
@@ -458,6 +452,7 @@ _plat__NVDisable(void)
 
 	// We're no longer init-ed
 	s_NVInitialized = FALSE;
+    s_NVChipFileNeedsManufacture = FALSE;
 
     return;
 }
@@ -471,7 +466,7 @@ _plat__NVDisable(void)
 LIB_EXPORT int
 _plat__IsNvAvailable(void)
 {
-    // This is not enabled for OpTEE TA. Storage is always available.
+    // This is not enabled for OpTEE TA. Storage is "always" available.
     return 0;
 }
 
@@ -530,6 +525,7 @@ _plat__MarkDirtyBlocks (
 	}
 
 	DMSG("Marking blocks %d to %d dirty", blockStart, blockEnd);
+
     // Dirty block range
 	for (i = blockStart; i < blockEnd; i++) {
         // Mark dirty

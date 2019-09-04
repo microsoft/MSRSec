@@ -52,12 +52,12 @@
 // see that two consecutive 32-bit values are not the same because
 // (according to FIPS 140-2, annex C
 //
-// 1. If each call to a RNG produces blocks of n bits (where n > 15), the first
+// "If each call to an RNG produces blocks of n bits (where n > 15), the first
 // n-bit block generated after power-up, initialization, or reset shall not be
 // used, but shall be saved for comparison with the next n-bit block to be
 // generated. Each subsequent generation of an n-bit block shall be compared with
 // the previously generated block. The test shall fail if any two compared n-bit
-// blocks are equal.
+// blocks are equal."
 extern uint32_t        lastEntropy;
 
 //** Functions
@@ -108,10 +108,10 @@ _plat__GetEntropy(
         else
         {
             lastEntropy = rndNum;
-            // Each process will have its random number generator initialized according
-            // to the process id and the initialization time. This is not a lot of 
-            // entropy so, to add a bit more, XOR the current time value into the 
-            // returned entropy value.
+            // Each process will have its random number generator initialized 
+            // according to the process id and the initialization time. This is not a 
+            // lot of entropy so, to add a bit more, XOR the current time value into 
+            // the returned entropy value.
             // NOTE: the reason for including the time here rather than have it in
             // in the value assigned to lastEntropy is that rand() could be broken and
             // using the time would in the lastEntropy value would hide this.

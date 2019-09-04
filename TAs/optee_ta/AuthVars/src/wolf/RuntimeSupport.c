@@ -92,7 +92,7 @@ void *wolfMalloc(size_t n)
 {
     void *addr = TEE_Malloc(n, TEE_MALLOC_FILL_ZERO);
     if (addr == NULL) {
-        EMSG("Malloc failed, out of memory!");
+        VAR_MSG("Malloc failed, out of memory!");
         //TEE_Panic(TEE_ERROR_OUT_OF_MEMORY);
         return addr;
     } else {
@@ -104,7 +104,7 @@ void *wolfRealloc(void *p, size_t n)
 {
     void *addr = TEE_Realloc(p, n);
     if (addr == NULL) {
-        EMSG("Realloc failed, out of memory!");
+        VAR_MSG("Realloc failed, out of memory!");
         //TEE_Panic(TEE_ERROR_OUT_OF_MEMORY);
         return addr;
     } else {

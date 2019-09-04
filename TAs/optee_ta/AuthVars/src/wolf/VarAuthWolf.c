@@ -54,7 +54,7 @@ extern const GUID EfiCertTypePKCS7Guid;
 
  // WC related definitions
 #define MAX_DECODED_CERTS   10
-#define WC_CHECK(x)       if ((x) < 0) { DMSG("WCCHECK: %x", x); status = FALSE; goto Cleanup; }
+#define WC_CHECK(x)       if ((x) < 0) { VAR_MSG("WCCHECK: %x", x); status = FALSE; goto Cleanup; }
 
 static BYTE Sha256SignatureBlock[] = {
     0x30, 0x31, 0x30, 0x0D, 0x06, 0x09, 0x60, 0x86,
@@ -484,7 +484,7 @@ Pkcs7Verify(
 
         // We have a match
         matchingCert = i;
-        DMSG("match!!: %x", matchingCert);
+        VAR_MSG("match!!: %x", matchingCert);
         break;
     }
 
@@ -514,7 +514,7 @@ Pkcs7Verify(
     // do a signature verifification against the Sha256SignatureBlock.
     length = wc_RsaSSL_Verify(signature, sigLength, buffer, sizeof(buffer), &pubKey);
 
-    DMSG("length: %x", length);
+    VAR_MSG("length: %x", length);
 
     // Error or unexpected langth?
     if (length != sizeof(Sha256SignatureBlock))
@@ -527,12 +527,12 @@ Pkcs7Verify(
     // Verify signature
     if (memcmp(Sha256SignatureBlock, buffer, sizeof(Sha256SignatureBlock)))
     {
-        DMSG("FAILED VERIFY");
+        VAR_MSG("FAILED VERIFY");
 
         status = FALSE;
         goto Cleanup;
     }
-    DMSG("!!!!VERIFY!!!!");
+    VAR_MSG("!!!!VERIFY!!!!");
 
     // We have a match
     status = TRUE;
@@ -596,7 +596,7 @@ ParseSecurebootVariable(
     // Validate size
     if (DataSize < sizeof(EFI_SIGNATURE_LIST))
     {
-        DMSG("here");
+        VAR_MSG("here");
         status = TEE_ERROR_BAD_PARAMETERS;
         goto Cleanup;
     }
@@ -609,13 +609,13 @@ ParseSecurebootVariable(
     sigListIndex = (PBYTE)((UINT_PTR)authPtr + sigListOffset);
     sigListLimit = Data + DataSize;
 
-    DMSG("DATA: %x DATASIZE: %x", Data, DataSize);
-    DMSG("slO: %x slI: %x slL: %x", sigListOffset, sigListIndex, sigListLimit);
+    VAR_MSG("DATA: %x DATASIZE: %x", Data, DataSize);
+    VAR_MSG("slO: %x slI: %x slL: %x", sigListOffset, sigListIndex, sigListLimit);
 
     // Integer overflow check
     if ((UINT_PTR)sigListLimit <= (UINT_PTR)Data)
     {
-        DMSG("here");
+        VAR_MSG("here");
         status = TEE_ERROR_BAD_PARAMETERS;
         goto Cleanup;
     }
@@ -629,16 +629,16 @@ ParseSecurebootVariable(
         doAlloc = FALSE;
         signatureList = (EFI_SIGNATURE_LIST*)sigListIndex;
 
-        DMSG("slO: %x slI: %x slL: %x", sigListOffset, sigListIndex, sigListLimit);
+        VAR_MSG("slO: %x slI: %x slL: %x", sigListOffset, sigListIndex, sigListLimit);
 
         // Sanity check signature list
         status = CheckSignatureList(signatureList, sigListLimit, &listEntries);
         if (status != TEE_SUCCESS)
         {
-            DMSG("here");
+            VAR_MSG("here");
             goto Cleanup;
         }
-        DMSG("listEntries: %x", listEntries);
+        VAR_MSG("listEntries: %x", listEntries);
 
         if (Op == ParseOpAll)
         {
@@ -654,14 +654,14 @@ ParseSecurebootVariable(
                 certCount += listEntries;
                 certSize = signatureList->SignatureSize - sizeof(EFI_SIGNATURE_DATA);
                 firstCert = (PBYTE)signatureList + sizeof(EFI_SIGNATURE_LIST) + sizeof(EFI_SIGNATURE_DATA);
-                DMSG("here");
+                VAR_MSG("here");
                 doAlloc = TRUE;
             }
         }
         else
         {
             // Bad Op value
-            DMSG("here");
+            VAR_MSG("here");
             status = TEE_ERROR_BAD_PARAMETERS;
             goto Cleanup;
         }
@@ -685,7 +685,7 @@ ParseSecurebootVariable(
                 // Sanity check
                 if (index >= *CertCount)
                 {
-                    DMSG("here");
+                    VAR_MSG("here");
                     status = TEE_ERROR_BAD_PARAMETERS;
                     goto Cleanup;
                 }
@@ -694,7 +694,7 @@ ParseSecurebootVariable(
                 InitDecodedCert(&Certs[index], certEntry, certSize, 0);
                 if (ParseCert(&Certs[index], CERT_TYPE, NO_VERIFY, 0))
                 {
-                    DMSG("here");
+                    VAR_MSG("here");
                     status = TEE_ERROR_BAD_PARAMETERS;
                     goto Cleanup;
                 }
@@ -709,7 +709,7 @@ ParseSecurebootVariable(
     // Index/limit mismatch?
     if (sigListIndex != sigListLimit)
     {
-        DMSG("here");
+        VAR_MSG("here");
         status = TEE_ERROR_BAD_PARAMETERS;
         goto Cleanup;
     }
@@ -774,7 +774,7 @@ PopulateCerts(
     status = ParseSecurebootVariable(PKvar->Data, PKsize, ParseOpX509, NULL, &PKcount);
     if (status != TEE_SUCCESS)
     {
-        DMSG("here");
+        VAR_MSG("here");
         goto Cleanup;
     }
 
@@ -785,7 +785,7 @@ PopulateCerts(
         status = ReadSecurebootVariable(KEK, &KEKvar, &KEKsize);
         if (status != TEE_SUCCESS)
         {
-            DMSG("here");
+            VAR_MSG("here");
             goto Cleanup;
         }
 
@@ -793,7 +793,7 @@ PopulateCerts(
         status = ParseSecurebootVariable(KEKvar->Data, KEKsize, ParseOpX509, NULL, &KEKcount);
         if (status != TEE_SUCCESS)
         {
-            DMSG("here");
+            VAR_MSG("here");
             goto Cleanup;
         }
     }
@@ -812,7 +812,7 @@ PopulateCerts(
     status = ParseSecurebootVariable(PKvar->Data, PKsize, ParseOpX509, certs, &totalParsed);
     if (status != TEE_SUCCESS)
     {
-        DMSG("here");
+        VAR_MSG("here");
         goto Cleanup;
     }
 
@@ -831,7 +831,7 @@ PopulateCerts(
         status = ParseSecurebootVariable(KEKvar->Data, KEKsize, ParseOpX509, &certs[PKcount], &totalParsed);
         if (status != TEE_SUCCESS)
         {
-            DMSG("here");
+            VAR_MSG("here");
             goto Cleanup;
         }
 
@@ -846,7 +846,7 @@ PopulateCerts(
 
     *Certs = certs;
     *CertCount = PKcount + KEKcount;
-    DMSG("NumberOfCerts: %x", CertCount);
+    VAR_MSG("NumberOfCerts: %x", CertCount);
 
 Cleanup:
     TEE_Free(PKvar);

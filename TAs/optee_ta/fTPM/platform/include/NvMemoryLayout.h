@@ -36,24 +36,24 @@
 #ifndef _COMBINEDNVMEMORY_H
 #define _COMBINEDNVMEMORY_H
 
-#define ROUNDUP(x, y)			((((x) + (y) - 1) / (y)) * (y))
+#define ROUNDUP(x, y)       ((((x) + (y) - 1) / (y)) * (y))
 
-#define NV_BLOCK_SIZE           (0x1000UL)
+#define NV_BLOCK_SIZE       (0x400UL)
 
 // Actual size of Admin space used. (See note in NVMem.c):
-//      sizeof(TPM_CHIP_STATE)   - 1 * sizeof(UINT32)
-//      sizeof(FTPM_PPI_STATE)   - 3 * sizeof(UINT32)
+//      sizeof(TPM_CHIP_STATE) - 1 * sizeof(UINT32)
+//      sizeof(FTPM_PPI_STATE) - 3 * sizeof(UINT32)
 #define ADMIN_STATE_SIZE    0x10
 
 // Admin space tacked on to NV, padded out to NV_BLOCK_SIZE alignment.
-// NOTE: We assume we have at least sizeof(UINT64) bytes in this padding!
-#define NV_ADMIN_STATE_SIZE     ROUNDUP(ADMIN_STATE_SIZE, NV_BLOCK_SIZE)
+// NOTE: We assume we have at least sizeof(UINT64) bytes in this padding
+// to contain the chipRevision for the TPM's NV storage!
+#define NV_ADMIN_STATE_SIZE ROUNDUP(ADMIN_STATE_SIZE, NV_BLOCK_SIZE)
 
 // Total allocation of the fTPM TA's storage for Authenticated Variables
 //      fTPM TA storage (128K total):
 //                        16K   (0x4000  bytes) - TPM NV storage
-//                         1k   (0x1000  bytes) - fTPM "Admin" state
-//          128K - (16K + 1k)   (0x1B000 bytes) - AuthVar storage
+//                         1k   (0x0400  bytes) - fTPM "Admin" state
 #define NV_TPM_STORAGE_SIZE ROUNDUP(NV_MEMORY_SIZE + NV_ADMIN_STATE_SIZE, NV_BLOCK_SIZE)
 
 // Align all data to 64 bit alignment
@@ -64,11 +64,14 @@
 //
 #define NV_TOTAL_MEMORY_SIZE ROUNDUP(NV_TPM_STORAGE_SIZE, NV_BLOCK_SIZE)
 
+//
+// Total count of storage blocks in NV
+//
 #define NV_BLOCK_COUNT      ((NV_TOTAL_MEMORY_SIZE) / (NV_BLOCK_SIZE))
 
 //
 // This offset puts the revision field at the end of the TPM Admin
-// state. The Admin space in NV is down to 0x14 bytes but is padded out
+// state. The Admin space in NV is down to 0x10 bytes but is padded out
 // to NV_BLOCK_SIZE bytes to avoid alignment issues and allow for growth.
 //
 // REVISIT: Consider defining a type for the chip revision and managing it 
