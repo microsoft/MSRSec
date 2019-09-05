@@ -26,7 +26,7 @@ The UEFI spec describes an authenticated variable store for use with Secure Boot
 
 ### Default Variables
 
-The AuthVar TA can encode a set of default variables at compile time, and place them into NV memory when it first runs. This is useful for forcing at default set of UEFI Secure Boot variables to be active during first boot, and as a protection against RPMB wipes. This can be turned on by setting `CFG_AUTHVARS_DEFAULT_VARS=y`. See [defaultvars/README.md](./defaultvars/README.md) for details on configuring this behavior.
+The AuthVar TA can encode a set of default variables at compile time, and place them into NV memory when it first runs. This is useful for forcing a default set of UEFI Secure Boot variables to be active during first boot, and as a protection against RPMB wipes. This can be turned on by setting `CFG_AUTHVARS_DEFAULT_VARS=y`. See [defaultvars/README.md](./defaultvars/README.md) for details on configuring this behavior.
 
 ## Debugging AuthVars
 
