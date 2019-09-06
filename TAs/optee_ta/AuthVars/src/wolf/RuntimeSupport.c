@@ -90,11 +90,21 @@ int wolfRand(unsigned char* output, unsigned int sz)
 #include <tee_internal_api.h>
 void *wolfMalloc(size_t n)
 {
-    return TEE_Malloc(n, TEE_MALLOC_FILL_ZERO);
+    void *ptr = TEE_Malloc(n, TEE_MALLOC_FILL_ZERO);
+#ifdef AUTHVAR_DEBUG
+    if(!ptr) 
+        DMSG("Malloc failed");
+#endif
+    return ptr;
 }
 
 void *wolfRealloc(void *p, size_t n)
 {
-    return TEE_Realloc(p, n);
+    void *ptr = TEE_Realloc(p, n);
+#ifdef AUTHVAR_DEBUG
+    if(!ptr)
+        DMSG("Realloc failed");
+#endif
+    return ptr;
 }
 #endif
