@@ -191,9 +191,17 @@ extern VTYPE_INFO VarInfo[VTYPE_END];       // Variable storage
 // Debug output
 //
 #ifndef AUTHVAR_DEBUG
-#define VAR_MSG(...) (void)0
+#define VAR_MSG(...)  (void)0
+#define VAR_EMSG(...) (void)0
+#define VAR_IMSG(...) (void)0
+#define VAR_DMSG(...) (void)0
+#define VAR_FMSG(...) (void)0
 #else
-#define VAR_MSG(...) DMSG(__VA_ARGS__)
+#define VAR_MSG(...)  MSG(__VA_ARGS__)
+#define VAR_EMSG(...) EMSG(__VA_ARGS__)
+#define VAR_IMSG(...) IMSG(__VA_ARGS__)
+#define VAR_DMSG(...) DMSG(__VA_ARGS__)
+#define VAR_FMSG(...) FMSG(__VA_ARGS__)
 #endif
 
 //

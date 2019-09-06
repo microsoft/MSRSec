@@ -80,9 +80,17 @@
 // Debug output
 //
 #ifndef fTPMDebug
-#define FTPM_MSG(...) (void)0
+#define FTPM_MSG(...)  (void)0
+#define FTPM_EMSG(...) (void)0
+#define FTPM_IMSG(...) (void)0
+#define FTPM_DMSG(...) (void)0
+#define FTPM_FMSG(...) (void)0
 #else
-#define FTPM_MSG(...) DMSG(__VA_ARGS__)
+#define FTPM_MSG(...)  MSG(__VA_ARGS__)
+#define FTPM_EMSG(...) EMSG(__VA_ARGS__)
+#define FTPM_IMSG(...) IMSG(__VA_ARGS__)
+#define FTPM_DMSG(...) DMSG(__VA_ARGS__)
+#define FTPM_FMSG(...) FMSG(__VA_ARGS__)
 #endif
 
 //
