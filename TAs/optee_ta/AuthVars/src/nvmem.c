@@ -46,7 +46,7 @@ extern AUTHVAR_META VarList[];
 //
 // Object enumerator and next free meta index value
 //
-static TEE_ObjectEnumHandle    AuthVarEnumerator = NULL;
+static TEE_ObjectEnumHandle    AuthVarEnum = NULL;
 static USHORT                  NextFreeIdx = 0;
 
 //
@@ -55,7 +55,21 @@ static USHORT                  NextFreeIdx = 0;
 extern UINT32 s_NonVolatileSize;
 
 //
-// Prototype(s)
+// AuthVars version object
+//
+#define AUTHVAR_VEROBJ              0x4175746856617273ULL  // 'AuthVars'
+#define AUTHVAR_NV_MAJOR_VERSION    0x01UL
+#define AUTHVAR_NV_MINOR_VERSION    0x02UL
+typedef struct _AUTHVAR_VERSION
+{
+    UINT64  Magic;
+    UINT32  MajorVersion;
+    UINT32  MinorVersion;
+} AUTHVAR_VERSION, *PAUTHVAR_VERSION;
+
+
+//
+// Prototypes
 //
 
 TEE_Result
@@ -86,8 +100,315 @@ NvCloseVariable(
 );
 
 //
-// Auth Var storage (de-)init functions
+// Functions
 //
+
+static
+TEE_Result
+AuthVarVersionSet(
+    VOID
+)
+{
+    AUTHVAR_VERSION versionInfo = { 0 };
+    UINT64 versionObjectID = AUTHVAR_VEROBJ;
+    TEE_ObjectHandle objHandle = TEE_HANDLE_NULL;
+    TEE_Result status;
+
+    // Init version information
+    versionInfo.Magic = AUTHVAR_VEROBJ;
+    versionInfo.MajorVersion = AUTHVAR_NV_MAJOR_VERSION;
+    versionInfo.MinorVersion = AUTHVAR_NV_MINOR_VERSION;
+
+    // Attempt to create version information object
+    status = TEE_CreatePersistentObject(TEE_STORAGE_PRIVATE,
+                                        (PVOID)&versionObjectID,
+                                        sizeof(versionObjectID),
+                                        TA_STORAGE_FLAGS,
+                                        NULL,
+                                        (PVOID)&versionInfo,
+                                        sizeof(AUTHVAR_VERSION),
+                                        &objHandle);
+    // Success?    
+    if (status != TEE_SUCCESS)
+    {
+        VAR_MSG("Failed to create version object (0x%x)", status);
+        goto Cleanup;
+    }
+
+    // Write out version object
+    status = TEE_WriteObjectData(objHandle, (PVOID)&versionInfo, sizeof(AUTHVAR_VERSION));
+    if (status != TEE_SUCCESS)
+    {
+        VAR_MSG("Failed to write object 0x%x", status);
+        goto Cleanup;
+    }
+
+    // Success
+    status = TEE_SUCCESS;
+
+Cleanup:
+    if(IS_VALID(objHandle))
+    {
+        TEE_CloseObject(objHandle);
+    }
+
+    return status;
+}
+
+
+static
+TEE_Result
+AuthVarVersionCheck(
+    VOID
+)
+{
+    AUTHVAR_VERSION versionInfo;
+    UINT64 versionObjectID;
+    UINT32 dataSize;
+    TEE_ObjectHandle objHandle;
+    TEE_ObjectEnumHandle enumHandle;
+    TEE_Result status;
+
+    // Read version object from storage
+    versionObjectID = AUTHVAR_VEROBJ;
+    status = TEE_OpenPersistentObject(TEE_STORAGE_PRIVATE,
+                                      &(versionObjectID),
+                                      sizeof(versionObjectID),
+                                      TA_STORAGE_FLAGS,
+                                      &objHandle);
+
+    // We may not encounter a version object.
+    // Make sure it is because storage has not been initialized yet.
+    if (status == TEE_ERROR_ITEM_NOT_FOUND)
+    {
+        VAR_MSG("No Authvars version object found");
+        status = TEE_AllocatePersistentObjectEnumerator(&enumHandle);
+        if (status != TEE_SUCCESS)
+        {
+            VAR_MSG("Failed to allocate object enumerator");
+            goto Cleanup;
+        }
+
+        status = TEE_StartPersistentObjectEnumerator(enumHandle, TEE_STORAGE_PRIVATE);
+        if (status != TEE_ERROR_ITEM_NOT_FOUND)
+        {
+            // Even if our status is success (especially if it is success) we
+            // have a problem. If we found no version object then we must not
+            // also find or read any storage objects.
+            status = TEE_ERROR_BAD_STATE;
+            goto Cleanup;
+        }
+
+        // No version object is present but our storage is clean, so close out
+        // the object enumerator and create our version object.
+        if (IS_VALID(enumHandle))
+        {
+            TEE_FreePersistentObjectEnumerator(enumHandle);
+        }
+
+        // Create version object
+        status = AuthVarVersionSet();
+        if(status != TEE_SUCCESS)
+        {
+            VAR_MSG("Failed to create version object (0x%x)", status);
+        }
+
+        goto Cleanup;
+    }
+
+    // Deal with potential failure status from object open
+    if (status != TEE_SUCCESS)
+    {
+        VAR_MSG("Failed to open version object (0x%x)", status);
+        goto Cleanup;
+    }
+
+    // Validate existing versioning object
+    status = TEE_ReadObjectData(objHandle,
+                                (PVOID)&versionInfo,
+                                sizeof(AUTHVAR_VERSION),
+                                &dataSize);
+    if (status != TEE_SUCCESS)
+    {
+        VAR_MSG("Failed to read version object (0x%x)", status);
+        goto Cleanup;
+    }
+
+    // Validate version object
+    if ((dataSize != sizeof(AUTHVAR_VERSION)) || (versionInfo.Magic != AUTHVAR_VEROBJ))
+    {
+        VAR_MSG("Failed version check");
+        status = TEE_ERROR_CORRUPT_OBJECT;
+        goto Cleanup;
+    }
+
+    // Validate version information
+    if ((versionInfo.MajorVersion != AUTHVAR_NV_MAJOR_VERSION) ||
+        (versionInfo.MinorVersion != AUTHVAR_NV_MINOR_VERSION))
+    {
+        VAR_MSG("TA version %d.%d attempting to load data version %d.%d",
+                AUTHVAR_NV_MAJOR_VERSION, AUTHVAR_NV_MINOR_VERSION,
+                versionInfo.MajorVersion, versionInfo.MinorVersion);
+
+        // We do not support rolling major version (right now)
+        if (versionInfo.MajorVersion != AUTHVAR_NV_MAJOR_VERSION)
+        {
+            status = TEE_ERROR_NOT_SUPPORTED;
+            goto Cleanup;
+        }
+#ifdef AUTHVAR_ALLOW_UPGRADE
+        // We're ok with picking up older minor versions
+        if (versionInfo.MinorVersion < AUTHVAR_NV_MINOR_VERSION)
+        {
+            // Roll minor version
+            status = AuthVarVersionSet();
+            goto Cleanup;
+        }
+#endif
+        // Unexpected version or upgrade not permitted
+        status = TEE_ERROR_NOT_SUPPORTED;
+        goto Cleanup;
+    }
+
+    // Success
+    status = TEE_SUCCESS;
+
+Cleanup:
+    if(IS_VALID(objHandle))
+    {
+        TEE_CloseObject(objHandle);
+    }
+
+    if(IS_VALID(enumHandle))
+    {
+        TEE_FreePersistentObjectEnumerator(enumHandle);
+    }
+
+    return status;
+}
+
+
+static
+TEE_Result
+AuthVarResetStorage(
+    VOID
+)
+/*++
+    Routine Description:
+
+        Clears all persistent objects
+
+    Arguments:
+
+        None
+
+    Returns:
+
+        TEE_SUCCESS if the memory was successfully wiped.
+
+--*/
+{
+    UINT64 objID;
+    UINT32 objIDLen, i;
+    VARTYPE varType;
+    TEE_ObjectInfo objInfo;
+    TEE_ObjectHandle objHandle;
+    TEE_ObjectEnumHandle enumHandle;
+    TEE_Result status;
+
+    // Init for object enumeration
+    status = TEE_AllocatePersistentObjectEnumerator(&enumHandle);
+    if (status != TEE_SUCCESS)
+    {
+        VAR_MSG("Failed to create enumerator (0x%x)", status);
+        goto Cleanup;
+    }
+
+    // Iterate objects
+    while (status == TEE_SUCCESS)
+    {
+        // May need to restart enumerator after object deletion so just do it regardless
+        status = TEE_StartPersistentObjectEnumerator(enumHandle, TEE_STORAGE_PRIVATE);
+        if (status == TEE_ERROR_ITEM_NOT_FOUND)
+        {
+            // We're done
+            break;
+        }
+
+        // Verify success status
+        if (status != TEE_SUCCESS)
+        {
+            VAR_MSG("Failed to clear storage (0x%x)", status);
+            goto Cleanup;
+        }
+
+        // Get object handle
+        status = TEE_GetNextPersistentObject(enumHandle,
+                                             &objInfo,
+                                             &objID,
+                                             &objIDLen);
+        if (status != TEE_SUCCESS)
+        {
+            VAR_MSG("Failed to clear storage (getNext: 0x%x)", status);
+            goto Cleanup;
+        }
+
+        // Open so we can delete
+        status =  TEE_OpenPersistentObject(TEE_STORAGE_PRIVATE,
+                                           &objID,
+                                           objIDLen,
+                                           TA_STORAGE_FLAGS,
+                                           &objHandle);
+        if (status != TEE_SUCCESS)
+        {
+            VAR_MSG("Failed to clear storage (open: 0x%x)", status);
+            goto Cleanup;
+        }
+
+        // Delete the object
+        TEE_CloseAndDeletePersistentObject1(objHandle);
+        objHandle = TEE_HANDLE_NULL;
+    }
+
+    // On "normal" successful completion of the above loop our status
+    // is TEE_ERROR_ITEM_NOT_FOUND. We don't verify that here since
+    // we're not in cleanup and we know nothing has gone awry.
+
+    // Set our version information
+    status = AuthVarVersionSet();
+    if (status != TEE_SUCCESS)
+    {
+        goto Cleanup;
+    }
+
+    // In the event are recovering from a corrupted variable object we will
+    // need to clear out any previous variables which are cached in memory.
+    for (i = 0; i < MAX_AUTHVAR_ENTRIES; i++)
+    {
+        if (VarList[i].Var != NULL)
+        {
+            TEE_Free(VarList[i].Var);
+        }
+    }
+
+    // Reset metadata
+    memset(VarList, 0, (sizeof(AUTHVAR_META) * MAX_AUTHVAR_ENTRIES));
+
+    // Reset variable info
+    for (varType = 0; varType < VTYPE_END; varType++)
+    {
+        InitializeListHead(&VarInfo[varType].Head);
+    }
+
+Cleanup:
+    if(IS_VALID(enumHandle))
+    {
+        TEE_FreePersistentObjectEnumerator(enumHandle);
+    }
+
+    return status;
+}
+
 
 TEE_Result
 AuthVarInitStorage(
@@ -105,7 +426,7 @@ AuthVarInitStorage(
 
     Returns:
 
-    TEE_Result
+        TEE_Result
 
 --*/
 {
@@ -127,8 +448,16 @@ AuthVarInitStorage(
         InitializeListHead(&VarInfo[varType].Head);
     }
 
+    // Check version information. It will be created if necessary.
+    status = AuthVarVersionCheck();
+    if (status != TEE_SUCCESS)
+    {
+        VAR_MSG("Failure on version check");
+        goto Cleanup;
+    }
+
     // Allocate object enumerator
-    status = TEE_AllocatePersistentObjectEnumerator(&AuthVarEnumerator);
+    status = TEE_AllocatePersistentObjectEnumerator(&AuthVarEnum);
     if (status != TEE_SUCCESS)
     {
         VAR_MSG("Failed to create enumerator: 0x%x", status);
@@ -136,16 +465,13 @@ AuthVarInitStorage(
     }
 
     // Start object enumerator
-    status = TEE_StartPersistentObjectEnumerator(AuthVarEnumerator, TEE_STORAGE_PRIVATE);
+    status = TEE_StartPersistentObjectEnumerator(AuthVarEnum, TEE_STORAGE_PRIVATE);
     if (status != TEE_SUCCESS)
     {
+        // At this point, any non-success status is failure, since we have
+        // already created our version object. Even with no variables in
+        // storage we should have at least encountered the version object.
         VAR_MSG("Failed to start enumerator: 0x%x", status);
-        // On first run there will be no objects in storage, this is expected.
-        if (status == TEE_ERROR_ITEM_NOT_FOUND)
-        {
-            VAR_MSG("No stored variables found");
-            status = TEE_SUCCESS;
-        }
         goto Cleanup;
     }
 
@@ -153,21 +479,42 @@ AuthVarInitStorage(
     i = 0;
 
     // Iterate over persistent objects
-    status = TEE_GetNextPersistentObject(AuthVarEnumerator,
+    status = TEE_GetNextPersistentObject(AuthVarEnum,
                                          &objInfo,
                                          &(VarList[i].ObjectID),
                                          &objIDLen);
     // Gather all available objects
     while ((status == TEE_SUCCESS) && (i < MAX_AUTHVAR_ENTRIES))
     {
+        // Skip the version object (we trust the storage subsystem to prevent
+        // creation of multiple objects with the same object id).
+        if (VarList[i].ObjectID == AUTHVAR_VEROBJ)
+        {
+            // Get next object
+            status = TEE_GetNextPersistentObject(AuthVarEnum,
+                                                 &objInfo,
+                                                 &(VarList[i].ObjectID),
+                                                 &objIDLen);
+            continue;
+        }
+
+        // Sanity check object size
+        if (objInfo.dataSize < sizeof(UEFI_VARIABLE))
+        {
+            status = TEE_ERROR_BAD_STATE;
+            VAR_MSG("Failed AuthVarInit: Object too small");
+            goto Cleanup;
+        }
+
         // Allocate space for this var
         if (!(pVar = TEE_Malloc(objInfo.dataSize, TEE_USER_MEM_HINT_NO_FILL_ZERO)))
         {
             status = TEE_ERROR_OUT_OF_MEMORY;
-            VAR_MSG("Failed alloc AuthVarInit");
+            VAR_MSG("Failed AuthVarInit: Malloc");
             goto Cleanup;
         }
 
+        // Enforce data size limits
         if(s_NonVolatileSize + objInfo.dataSize > MAX_NV_STORAGE)
         {
             status = TEE_ERROR_OUT_OF_MEMORY;
@@ -177,7 +524,8 @@ AuthVarInitStorage(
 
         s_NonVolatileSize += objInfo.dataSize;
 
-        if (NvOpenVariable(&VarList[i]) != TEE_SUCCESS) {
+        // Open Object
+        if (NvOpenVariable(&(VarList[i])) != TEE_SUCCESS) {
             VAR_MSG("Failed to open NV handle");
             TEE_Panic(status);
         }
@@ -188,6 +536,7 @@ AuthVarInitStorage(
                                     objInfo.dataSize,
                                     &size);
 
+        // Close object
         NvCloseVariable(&VarList[i]);
 
         // Sanity check size
@@ -212,7 +561,7 @@ AuthVarInitStorage(
         i++;
 
         // Attempt to get another object
-        status = TEE_GetNextPersistentObject(AuthVarEnumerator,
+        status = TEE_GetNextPersistentObject(AuthVarEnum,
                                              &objInfo,
                                              &(VarList[i].ObjectID),
                                              &objIDLen);
@@ -237,13 +586,22 @@ AuthVarInitStorage(
 
 Cleanup:
     // Free enumerator, if necessary
-    if (IS_VALID(AuthVarEnumerator))
+    if (IS_VALID(AuthVarEnum))
     {
-        TEE_FreePersistentObjectEnumerator(AuthVarEnumerator);
+        TEE_FreePersistentObjectEnumerator(AuthVarEnum);
     }
+
+#ifdef AUTHVARS_RESET_ON_ERROR
+    // Wipe storage if necessary
+    if (status != TEE_SUCCESS)
+    {
+        return AuthVarResetStorage();
+    }
+#endif
 
     return status;
 }
+
 
 TEE_Result
 AuthVarCloseStorage(
@@ -265,61 +623,22 @@ AuthVarCloseStorage(
 
 --*/
 {
-    // TODO: This
+    UINT32 i;
+
+    // Iterate variable list freeing resources
+    for (i = 0; i < MAX_AUTHVAR_ENTRIES; i++)
+    {
+        if (VarList[i].ObjectID)
+        {
+            NvCloseVariable(&(VarList[i]));
+            TEE_Free(VarList[i].Var);
+        }
+    }
+
+    // Clear metadata
+    memset(VarList, 0, (sizeof(AUTHVAR_META) * MAX_AUTHVAR_ENTRIES));
+
     return TEE_SUCCESS;
-}
-
-TEE_Result
-NvOpenVariable(
-    AUTHVAR_META *VarMeta
-)
-/*++
-
-    Routine Description:
-
-        Open a handle for updating a non-volatile variable
-
-    Arguments:
-
-        Address of the variable meta data
-
-    Returns:
-
-        TEE_Result
-
---*/
-{
-    // Open object
-    FMSG("Opening NV handle");
-    return TEE_OpenPersistentObject(TEE_STORAGE_PRIVATE,
-                                        &(VarMeta->ObjectID),
-                                        sizeof(VarMeta->ObjectID),
-                                        TA_STORAGE_FLAGS,
-                                        &(VarMeta->ObjectHandle));
-}
-
-VOID
-NvCloseVariable(
-    AUTHVAR_META *VarMeta
-)
-/*++
-
-    Routine Description:
-
-        Close a handle after updating a non-volatile variable
-
-    Arguments:
-
-        Address of the variable meta data
-
-    Returns:
-
-        None
-
---*/
-{
-    FMSG("Closing NV handle");
-    TEE_CloseObject(VarMeta->ObjectHandle);
 }
 
 
@@ -350,6 +669,61 @@ AuthVarNextFreeIdx(
     // function. This means we're maxed out..
     *index = i;
     return TRUE;
+}
+
+
+static
+TEE_Result
+NvOpenVariable(
+    AUTHVAR_META *VarMeta
+)
+/*++
+
+    Routine Description:
+
+        Open a handle for updating a non-volatile variable
+
+    Arguments:
+
+        Address of the variable meta data
+
+    Returns:
+
+        TEE_Result
+
+--*/
+{
+    // Open object
+    return TEE_OpenPersistentObject(TEE_STORAGE_PRIVATE,
+                                    &(VarMeta->ObjectID),
+                                    sizeof(VarMeta->ObjectID),
+                                    TA_STORAGE_FLAGS,
+                                    &(VarMeta->ObjectHandle));
+}
+
+
+static
+VOID
+NvCloseVariable(
+    AUTHVAR_META *VarMeta
+)
+/*++
+
+    Routine Description:
+
+        Close a handle after updating a non-volatile variable
+
+    Arguments:
+
+        Address of the variable meta data
+
+    Returns:
+
+        None
+
+--*/
+{
+    TEE_CloseObject(VarMeta->ObjectHandle);
 }
 
 
@@ -488,7 +862,7 @@ NvUpdateVariable(
     // Calculate new size of persistent object
     newSize = sizeof(UEFI_VARIABLE) + Var->NameSize + Var->ExtAttribSize + Var->DataSize;
 
-    if (NvOpenVariable(&VarList[i]) != TEE_SUCCESS) {
+    if (NvOpenVariable(&(VarList[i])) != TEE_SUCCESS) {
         VAR_MSG("Failed to open NV handle");
         TEE_Panic(status);
     }
@@ -547,7 +921,7 @@ NvDeleteVariable(
         TEE_Panic(TEE_ERROR_BAD_STATE);
     }
 
-    if (NvOpenVariable(&VarList[i]) != TEE_SUCCESS) {
+    if (NvOpenVariable(&(VarList[i])) != TEE_SUCCESS) {
         VAR_MSG("Failed to open NV handle");
         TEE_Panic(status);
     }
