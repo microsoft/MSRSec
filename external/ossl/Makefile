@@ -1,4 +1,9 @@
+ifeq ($(CFG_ARM64_ta_arm64),y)
+TARGET=linux-generic64
+else
 TARGET=linux-generic32
+endif
+
 PREFIX=/opt/openssl
 
 INCLUDES = -I$(PREFIX)/include
@@ -13,7 +18,11 @@ CC+=-I$(CURDIR)/include
 CC+=-fno-builtin
 CC+=-ffreestanding
 CC+=-nostdinc
+ifeq ($(CFG_ARM64_ta_arm64),y)
+CC+=-mstrict-align
+else
 CC+=-mno-unaligned-access
+endif
 CC+=-fshort-wchar
 CC+=-DOPENSSL_IMPLEMENTS_strncasecmp
 CC+=-DOPENSSL_NO_SOCK
