@@ -8,14 +8,25 @@
     __STATIC_ASSERT, __LINE__)[(COND) ? 1 : -1] __attribute__((unused))
 
 #ifdef __x86_64
+typedef unsigned long long uint64_t;
+typedef long long int64_t;
 typedef signed long long ptrdiff_t;
 typedef unsigned long long size_t;
 typedef long long ssize_t;
 #elif defined(__arm__)
 STATIC_ASSERT(sizeof(long) == 4);
+typedef unsigned long long uint64_t;
+typedef long long int64_t;
 typedef signed int ptrdiff_t;
 typedef unsigned int size_t;
 typedef int ssize_t;
+#elif defined(__aarch64__)
+STATIC_ASSERT(sizeof(long) == 8);
+typedef unsigned long uint64_t;
+typedef long int64_t;
+typedef signed long ptrdiff_t;
+typedef unsigned long size_t;
+typedef long ssize_t;
 #endif
 
 typedef char int8_t;
@@ -24,8 +35,6 @@ typedef short int16_t;
 typedef unsigned short uint16_t;
 typedef int int32_t;
 typedef unsigned int uint32_t;
-typedef unsigned long long uint64_t;
-typedef long long int64_t;
 typedef long time_t;
 typedef long suseconds_t;
 typedef struct timespec __timespec_dummy;
