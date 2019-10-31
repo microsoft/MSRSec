@@ -105,7 +105,7 @@ TEE_Result
 PopulateCerts(
     SECUREBOOT_VARIABLE Var1,       // IN
     SECUREBOOT_VARIABLE Var2,       // IN
-    CERTIFICATE **Certs,            // INOUT              
+    CERTIFICATE **Certs,            // INOUT
     UINT32 *NumberOfCerts           // OUT
 );
 

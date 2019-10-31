@@ -197,7 +197,7 @@ static TEE_Result fTPMStartup()
         respBuf = startupState;
         respLen = STARTUP_SIZE;
 
-        ExecuteCommand(STARTUP_SIZE, startupState, &respLen, &respBuf);
+        _plat__RunCommand(STARTUP_SIZE, startupState, &respLen, &respBuf);
         if (fTPMResponseCode(respLen, respBuf) == TPM_RC_SUCCESS) {
             goto Exit;
         }
@@ -212,7 +212,7 @@ Clear:
     respLen = STARTUP_SIZE;
 
     // Fall back to a Startup Clear
-    ExecuteCommand(STARTUP_SIZE, startupClear, &respLen, &respBuf);
+    _plat__RunCommand(STARTUP_SIZE, startupClear, &respLen, &respBuf);
 
 Exit:
     // Init is complete, indicate so in fTPM admin state.
@@ -395,7 +395,7 @@ static TEE_Result fTPM_Submit_Command(uint32_t  param_types,
     // Check if this is a PPI Command
     if (!_admin__PPICommand(cmdLen, cmdBuf, &respLen, &respBuf)) {
         // If not, pass through to TPM
-        ExecuteCommand(cmdLen, cmdBuf, &respLen, &respBuf);
+        _plat__RunCommand(cmdLen, cmdBuf, &respLen, &respBuf);
     }
 
     // Unfortunately, this cannot be done until after we have our response in

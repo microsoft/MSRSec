@@ -94,16 +94,6 @@
 #endif
 
 //
-// Entrypoint for reference implemntation
-//
-extern void ExecuteCommand(
-    uint32_t         requestSize,   // IN: command buffer size
-    unsigned char   *request,       // IN: command buffer
-    uint32_t        *responseSize,  // OUT: response buffer size
-    unsigned char   **response      // OUT: response buffer
-    );
-
-//
 // External functions supporting TPM initialization
 //
 extern int  _plat__NVEnable(void *platParameter);
@@ -113,6 +103,8 @@ extern void _TPM_Init(void);
 extern void _plat__Signal_PowerOn(void);
 extern void _plat__NVDisable(void);
 extern void _admin__SaveChipFlags(void);
+extern void _plat__RunCommand(uint32_t requestSize,   unsigned char *request,
+                              uint32_t *responseSize, unsigned char **response);
 
 //
 // External types/data supporting TPM initialization

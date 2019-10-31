@@ -54,11 +54,11 @@
 #include <tee_internal_api.h>
 #include <tee_internal_api_extensions.h>
 
-jmp_buf              s_jumpBuffer;
+jmp_buf         s_jumpBuffer;
 
-extern UINT32    s_failFunction;
-extern UINT32    s_failLine;
-extern UINT32    s_failCode; 
+extern UINT32   s_failFunction;
+extern UINT32   s_failLine;
+extern UINT32   s_failCode; 
 
 //** Functions
 
@@ -89,9 +89,6 @@ _plat__Fail(
     void
     )
 {
-    EMSG("TPM is in failure state! (0x%x)", s_failCode);
-#if FAIL_TRACE
-    EMSG("%s:%d", s_failFunction, s_failLine);
-#endif
-    TEE_Panic(TEE_ERROR_BAD_STATE);
+    EMSG("TPM in failure mode (0x%x)", s_failCode);
+    longjmp(&s_jumpBuffer[0], 1);
 }
