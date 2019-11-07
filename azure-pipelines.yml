@@ -1,5 +1,5 @@
 jobs:
-  - job: Build
+  - job: Build_32
     pool:
       vmImage: 'Ubuntu-16.04'
     strategy:
@@ -34,13 +34,64 @@ jobs:
     
     - script: |
         cd ../optee_os
-        CROSS_COMPILE=$(Build.SourcesDirectory)/gcc-linaro-6.4.1-2017.11-x86_64_arm-linux-gnueabihf/bin/arm-linux-gnueabihf- make PLATFORM=imx-mx6qhmbedge CFG_TEE_CORE_LOG_LEVEL=4 CFG_REE_FS=n CFG_RPMB_FS=y CFG_RPMB_TESTKEY=y CFG_RPMB_WRITE_KEY=y CPPFLAGS="-fshort-wchar"
+        CROSS_COMPILE=$(Build.SourcesDirectory)/gcc-linaro-6.4.1-2017.11-x86_64_arm-linux-gnueabihf/bin/arm-linux-gnueabihf- make PLATFORM=vexpress-qemu_virt CFG_TEE_CORE_LOG_LEVEL=4 CFG_REE_FS=n CFG_RPMB_FS=y CFG_RPMB_TESTKEY=y CFG_RPMB_WRITE_KEY=y CPPFLAGS="-fshort-wchar"
       displayName: Build OP-TEE
 
     - script: |
         ls
         cd TAs/optee_ta/$(Target)
-        make $(Crypto) TA_CPU=cortex-a9 TA_CROSS_COMPILE=$(Build.SourcesDirectory)/gcc-linaro-6.4.1-2017.11-x86_64_arm-linux-gnueabihf/bin/arm-linux-gnueabihf- CROSS_COMPILE=$(Build.SourcesDirectory)/gcc-linaro-6.4.1-2017.11-x86_64_arm-linux-gnueabihf/bin/arm-linux-gnueabihf- TA_DEV_KIT_DIR=$(Build.SourcesDirectory)/../optee_os/out/arm-plat-imx/export-ta_arm32
+        make $(Crypto) TA_CPU=cortex-a15 TA_CROSS_COMPILE=$(Build.SourcesDirectory)/gcc-linaro-6.4.1-2017.11-x86_64_arm-linux-gnueabihf/bin/arm-linux-gnueabihf- CROSS_COMPILE=$(Build.SourcesDirectory)/gcc-linaro-6.4.1-2017.11-x86_64_arm-linux-gnueabihf/bin/arm-linux-gnueabihf- TA_DEV_KIT_DIR=$(Build.SourcesDirectory)/../optee_os/out/arm-plat-vexpress/export-ta_arm32
+      displayName: Build TA
+
+    - task: ComponentGovernanceComponentDetection@0
+
+  - job: Build_64
+    pool:
+      vmImage: 'Ubuntu-16.04'
+    strategy:
+      matrix:
+        TpmWolf64:
+          Target: fTPM
+          Crypto: CFG_FTPM_USE_WOLF=y
+        TpmOSSL64:
+          Target: fTPM
+          Crypto: CFG_FTPM_USE_WOLF=n
+        AuthvarsWolf64:
+          Target: AuthVars
+          Crypto: CFG_AUTHVARS_USE_WOLF=y
+        AuthvarsOSSL64:
+          Target: AuthVars
+          Crypto: CFG_AUTHVARS_USE_WOLF=n
+
+    steps:
+    - script: |
+        cd ..
+        git clone https://github.com/ms-iot/optee_os.git
+      displayName: Clone OP-TEE
+      
+    - script: |
+        sudo apt-get install python3-pyelftools
+      displayName: Install elftools
+
+    - script: |
+        wget https://releases.linaro.org/components/toolchain/binaries/6.4-2017.11/arm-linux-gnueabihf/gcc-linaro-6.4.1-2017.11-x86_64_arm-linux-gnueabihf.tar.xz
+        tar xf gcc-linaro-6.4.1-2017.11-x86_64_arm-linux-gnueabihf.tar.xz
+      displayName: Download GCC (arm)
+
+    - script: |
+        wget https://releases.linaro.org/components/toolchain/binaries/7.2-2017.11/aarch64-linux-gnu/gcc-linaro-7.2.1-2017.11-x86_64_aarch64-linux-gnu.tar.xz
+        tar xf gcc-linaro-7.2.1-2017.11-x86_64_aarch64-linux-gnu.tar.xz
+      displayName: Download GCC (aarch64)
+    
+    - script: |
+        cd ../optee_os
+        CROSS_COMPILE64=$(Build.SourcesDirectory)/gcc-linaro-7.2.1-2017.11-x86_64_aarch64-linux-gnu/bin/aarch64-linux-gnu- CROSS_COMPILE=$(Build.SourcesDirectory)/gcc-linaro-6.4.1-2017.11-x86_64_arm-linux-gnueabihf/bin/arm-linux-gnueabihf- make PLATFORM=vexpress-qemu_armv8a CFG_ARM64_core=y CFG_TEE_CORE_LOG_LEVEL=4 CFG_REE_FS=n CFG_RPMB_FS=y CFG_RPMB_TESTKEY=y CFG_RPMB_WRITE_KEY=y CPPFLAGS="-fshort-wchar"
+      displayName: Build OP-TEE
+
+    - script: |
+        ls
+        cd TAs/optee_ta/$(Target)
+        make $(Crypto) TA_CPU=cortex-a53 TA_CROSS_COMPILE=$(Build.SourcesDirectory)/gcc-linaro-7.2.1-2017.11-x86_64_aarch64-linux-gnu/bin/aarch64-linux-gnu- CROSS_COMPILE64=$(Build.SourcesDirectory)/gcc-linaro-7.2.1-2017.11-x86_64_aarch64-linux-gnu/bin/aarch64-linux-gnu- TA_DEV_KIT_DIR=$(Build.SourcesDirectory)/../optee_os/out/arm-plat-vexpress/export-ta_arm64
       displayName: Build TA
 
     - task: ComponentGovernanceComponentDetection@0
