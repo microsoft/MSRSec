@@ -359,7 +359,7 @@ Pkcs7Verify(
     // We never expect to see this many certs (10) in signedData but
     // there needs to be some max. In the normal case we drop out of
     // this loop well before the max potential cert count is reached.
-    for (count = 0; i = 0; i < 10; i++)
+    for (count = 0, i = 0; i < 10; i++)
     {
         // The cert is a SEQUENCE, so find the length of this cert
         startOfPtr = p; // Save p for later..
