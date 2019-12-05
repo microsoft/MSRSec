@@ -240,6 +240,8 @@ TPM_SOURCES = \
  tpm_symlink/tpm/src/support/PropertyCap.c \
  tpm_symlink/tpm/src/support/Response.c \
  tpm_symlink/tpm/src/support/ResponseCodeProcessing.c \
+ tpm_symlink/tpm/src/support/TableDrivenMarshal.c \
+ tpm_symlink/tpm/src/support/TableMarshalData.c \
  tpm_symlink/tpm/src/support/TpmFail.c \
  tpm_symlink/tpm/src/support/TpmSizeChecks.c \
  tpm_symlink/tpm/src/X509/TpmASN1.c \
