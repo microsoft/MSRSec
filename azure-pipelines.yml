@@ -91,7 +91,7 @@ jobs:
     - script: |
         ls
         cd TAs/optee_ta/$(Target)
-        make $(Crypto) TA_CPU=cortex-a53 TA_CROSS_COMPILE=$(Build.SourcesDirectory)/gcc-linaro-7.2.1-2017.11-x86_64_aarch64-linux-gnu/bin/aarch64-linux-gnu- CROSS_COMPILE64=$(Build.SourcesDirectory)/gcc-linaro-7.2.1-2017.11-x86_64_aarch64-linux-gnu/bin/aarch64-linux-gnu- TA_DEV_KIT_DIR=$(Build.SourcesDirectory)/../optee_os/out/arm-plat-vexpress/export-ta_arm64
+        make $(Crypto) TA_CPU=cortex-a53 CFG_ARM64_ta_arm64=y TA_CROSS_COMPILE=$(Build.SourcesDirectory)/gcc-linaro-7.2.1-2017.11-x86_64_aarch64-linux-gnu/bin/aarch64-linux-gnu- CROSS_COMPILE64=$(Build.SourcesDirectory)/gcc-linaro-7.2.1-2017.11-x86_64_aarch64-linux-gnu/bin/aarch64-linux-gnu- TA_DEV_KIT_DIR=$(Build.SourcesDirectory)/../optee_os/out/arm-plat-vexpress/export-ta_arm64
       displayName: Build TA
 
     - task: ComponentGovernanceComponentDetection@0
