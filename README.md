@@ -4,8 +4,6 @@ Microsoft Research Security TAs
 
 This repository contains [OP-TEE](https://github.com/OP-TEE/optee_os) Trusted Applications (TAs) which implement a firmware Trusted Platform Module (TPM), and a UEFI authenticated variable store.
 
-While these TAs were developed for use with Windows IoT Core running on NXP i.MX processors (see the [build-firmware document](https://github.com/ms-iot/imx-iotcore/blob/public_preview/Documentation/build-firmware.md) for additional information), the TAs are not limited to that platform and all instructions in this document are stand-alone.
-
 ## Further Reading
 
 See [Authvars README.md](TAs/optee_ta/AuthVars/README.md) and [fTPM README.md](TAs/optee_ta/fTPM/README.md) for details about each TA.
