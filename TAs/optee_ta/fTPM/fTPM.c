@@ -319,6 +319,7 @@ static TEE_Result fTPM_Submit_Command(uint32_t  param_types,
     DMSG("Success, RS: 0x%x\n", respLen);
 #endif
 
+    params[1].memref.size = respLen;
     return TEE_SUCCESS;
 }
 
