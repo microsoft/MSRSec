@@ -235,6 +235,8 @@ AuthVarInitStorage(
         {
             status = TEE_ERROR_OUT_OF_MEMORY;
             EMSG("Failed AuthVarInit: Exceeds non-volatile variable max allocation.");
+            TEE_Free(pVar);
+            VarList[i].ObjectID = 0;
             goto Cleanup;
         }
 
