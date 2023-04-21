@@ -32,6 +32,10 @@
  */
 
 #include <varmgmt.h>
+#ifdef CFG_AUTHVARS_DEFAULT_VARS
+#include <defaultvars.h>
+#endif
+
 
 // 
 // Auth Var in-memory storage layout
@@ -207,6 +211,27 @@ AuthVarInitStorage(
         if (status == TEE_ERROR_ITEM_NOT_FOUND)
         {
             DMSG("No stored variables found");
+#ifdef CFG_AUTHVARS_DEFAULT_VARS
+            status = InitializeDefaultVariables();
+            if (status != TEE_SUCCESS) {
+                EMSG("Failed to set default variables");
+                // TODO: Make this operation atomic.
+
+                // Ex: Setting default variables {A, B, C, db, kek, pk}.
+                // If {A, B, C} are set correctly, but setting db fails, the TA
+                // we be in a bad state. The TA will be 'initialized' since it
+                // has at least one persistent object available (A, B, and C),
+                // and will make no further attempts to set db, kek, pk.
+                //
+                // This step must be made atomic either by removing the variables,
+                // or setting a NV flag when done. Setting a flag is probably
+                // preferable since it will handle both graceful failures and
+                // premature power cycles.
+
+                // WipeMemory();
+                goto Cleanup;
+            }
+#endif
             status = TEE_SUCCESS;
         }
         goto Cleanup;

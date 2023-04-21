@@ -24,6 +24,10 @@ The storage is currently encrypted by OP-TEE using a TA Storage Key (TSK) encryp
 
 The UEFI spec describes an authenticated variable store for use with Secure Boot. The TA supports variable reads and writes up to 16KB in size (this is a limitation of the rich OS side driver). This should allow for a reasonable set of Secure Boot keys to be stored.
 
+### Default Variables
+
+The AuthVar TA can encode a set of default variables at compile time, and place them into NV memory when it first runs. This is useful for forcing a default set of UEFI Secure Boot variables to be active during first boot, and as a protection against RPMB wipes. This can be turned on by setting `CFG_AUTHVARS_DEFAULT_VARS=y`. See [defaultvars/README.md](./defaultvars/README.md) for details on configuring this behavior.
+
 ## Debugging AuthVars
 
 ### Clearing Storage
