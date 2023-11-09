@@ -2,7 +2,7 @@ Microsoft Research Security TAs
 ===========
 ## Trusted firmware for 32-bit and 64-bit ARM SoC's
 
-This repository contains [OP-TEE](https://github.com/OP-TEE/optee_os) Trusted Applications (TAs) which implement a firmware Trusted Platform Module (TPM), and a UEFI authenticated variable store.
+This repository contains [OP-TEE](https://github.com/OP-TEE/optee_os) Trusted Applications (TAs) which implement a firmware Trusted Platform Module (TPM), and a UEFI authenticated variable store.  These are provided as starting points for development of fTPM and AuthVars implementations.
 
 ## Further Reading
 
