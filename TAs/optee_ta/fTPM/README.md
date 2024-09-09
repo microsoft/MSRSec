@@ -5,6 +5,10 @@ This TPM implementation is based on the [TPM reference implementation](https://g
 
 ## Design
 
+### Define Manufacturer and Vendor Strings
+
+Implementors must define `MANUFACTURER` and vendor strings (at least `VENDOR_STRING_1`) in the the following header: `TAs\optee_ta\fTPM\reference\include\VendorString.h`.
+
 ### Platform
 
 The TPM reference implementation defines a platform API (`ms-tpm-20-ref/TPMCmd/Platform`) which can be swapped out depending on where the TPM code is running. In the case of the fTPM the OP-TEE API is used to implement this platform.

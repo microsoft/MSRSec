@@ -40,7 +40,8 @@
 // for TPM_PT_MANUFACTURER in TPM2_GetCapability.
 // The following line should be un-commented and a vendor specific string 
 // should be provided here.  
-#define    MANUFACTURER    "MSFT"
+
+// #define    MANUFACTURER          "1234"
 
 // The following #if macro may be deleted after a proper MANUFACTURER is provided.
 #ifndef MANUFACTURER
@@ -56,10 +57,10 @@ manufacturer name.
 // The following line should be un-commented and a vendor specific string
 // should be provided here.
 // The vendor strings 2-4 may also be defined as appropriately.
-#define       VENDOR_STRING_1       "MSR "
-#define       VENDOR_STRING_2       "fTPM"
-// #define       VENDOR_STRING_3 
-// #define       VENDOR_STRING_4
+// #define       VENDOR_STRING_1    "1234"
+// #define       VENDOR_STRING_2    "1234"
+// #define       VENDOR_STRING_3    "1234"
+// #define       VENDOR_STRING_4    "1234"
 
 // The following #if macro may be deleted after a proper VENDOR_STRING_1 
 // is provided.
