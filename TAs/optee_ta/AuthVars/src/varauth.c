@@ -444,8 +444,8 @@ CheckSignatureList(
 
     // Sanity checks on the signature list
     if (((SignatureListEnd - (PBYTE)SignatureList) < (INT_PTR)sizeof(EFI_SIGNATURE_LIST))
-        || (((PBYTE)SignatureList + SignatureList->SignatureListSize) < (PBYTE)SignatureList)
-        || (((PBYTE)SignatureList + SignatureList->SignatureListSize) > SignatureListEnd))
+        || (SignatureList->SignatureListSize > (size_t)(SignatureListEnd - (PBYTE)SignatureList))
+        || ((PBYTE)SignatureList + SignatureList->SignatureListSize > SignatureListEnd))
     {
         status = TEE_ERROR_BAD_PARAMETERS;
         DMSG("here");
